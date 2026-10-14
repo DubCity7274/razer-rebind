@@ -43,7 +43,9 @@ show live key presses.
 
 ## Installing on Fedora / Nobara
 
-Build the RPM in a clean Fedora container (needs `podman`):
+Download the RPM from the repo's **Releases** page, or from the
+**Artifacts** of any run of the RPM workflow under **Actions**. Or build
+the RPM in a clean Fedora container (needs `podman`):
 
 ```bash
 ./packaging/build-rpm.sh
@@ -59,6 +61,17 @@ The package installs the app, its menu entry, the udev permission rule
 described below (applied right away, no replug needed), and the
 `razer-rebind` systemd user service. Use `FEDORA=43 ./packaging/build-rpm.sh`
 to build for another Fedora release.
+
+To publish a release, bump `Version:` in `packaging/razer-rebind.spec` and
+`project(... VERSION ...)` in `CMakeLists.txt`, add a `%changelog` entry,
+commit, then tag and push:
+
+```bash
+git tag v0.3.0 && git push origin v0.3.0
+```
+
+The workflow builds the RPM and creates the GitHub Release with it attached.
+It refuses to publish if the tag doesn't match the spec version.
 
 ## Building from source
 
