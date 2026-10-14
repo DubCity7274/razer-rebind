@@ -1,0 +1,11 @@
+# Razer Rebind: let the user at the local seat use Razer input devices and uinput.
+#
+# uaccess grants access only to the user with the active local session (it is
+# re-applied on user switches), so remote and background users get nothing.
+# The file name must sort before 73-seat-late.rules for uaccess to take effect.
+
+# Create virtual (remapped) devices.
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"
+
+# Read and grab the event nodes of Razer (USB vendor 1532) keyboards and mice.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{idVendor}=="1532", TAG+="uaccess"

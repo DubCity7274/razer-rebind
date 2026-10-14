@@ -1,0 +1,12 @@
+[Unit]
+Description=Razer Rebind (apply key bindings to Razer devices)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=razer-rebind --headless
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target

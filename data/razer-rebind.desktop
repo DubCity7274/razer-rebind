@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Razer Rebind
+GenericName=Key Rebinding
+Comment=Rebind keys and buttons on Razer keyboards and mice (OpenRazer)
+Exec=razer-rebind
+Icon=input-keyboard
+Terminal=false
+Categories=Settings;HardwareSettings;Qt;
+Keywords=razer;openrazer;keyboard;mouse;remap;rebind;macro;
