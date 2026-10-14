@@ -6,11 +6,11 @@
 #include <QDialog>
 #include <QPushButton>
 #include <QSet>
-#include <QTimer>
 
 class QCheckBox;
 class QLabel;
 class QRadioButton;
+class InputDetector;
 class RemapManager;
 
 // Searchable list of key / button names.
@@ -62,17 +62,8 @@ public:
 
     void accept() override;
 
-protected:
-    bool eventFilter(QObject *watched, QEvent *event) override;
-
 private:
-    void startDetect();
-    void stopDetect();
-    void onInput(const QString &profileKey, int code, bool pressed);
     void updateState();
-
-    RemapManager *m_manager;
-    RazerDevice m_device;
 
     KeyPicker *m_source;
     QPushButton *m_detect;
@@ -85,9 +76,5 @@ private:
     KeyPicker *m_key;
     KeyRecorder *m_record;
     QLabel *m_preview;
-
-    bool m_detecting = false;
-    int m_detected = -1;
-    int m_countdown = 0;
-    QTimer m_detectTimer;
+    InputDetector *m_detector;
 };

@@ -1,9 +1,10 @@
 #pragma once
 
-#include "keys.h"
+#include "config.h"
 #include "razerdevice.h"
 
 #include <QObject>
+#include <QSet>
 
 #include <atomic>
 #include <mutex>
@@ -34,6 +35,9 @@ public:
     void stop();
 
     void setBindings(const BindingMap &bindings);
+    void setHotkeys(const QList<Hotkey> &hotkeys);
+    // Whether any of the device's nodes can report this key, button or wheel code.
+    bool canProduce(int code) const { return m_capabilities.contains(code); }
     void setActive(bool active);
     bool isGrabbed() const { return m_grabbed.load(); }
     bool isWaitingForRelease() const { return m_pendingGrab.load(); }
@@ -43,6 +47,7 @@ signals:
     // worker thread; connect with the default (queued) connection type.
     void inputEvent(int code, bool pressed);
     void stateChanged();
+    void hotkeyTriggered(int action, const QString &profile);
     void failed(const QString &message);
     void disconnected();
 
@@ -70,6 +75,9 @@ private:
     void release(int code);
     void tap(const QList<int> &targets);
     QList<int> lookup(int code, bool *bound);
+    bool matchHotkey(int code, bool trigger);
+    void trackModifier(int code, bool pressed);
+    void releaseModifiers();
 
     RazerDevice m_device;
     std::vector<Source> m_sources;
@@ -78,6 +86,8 @@ private:
 
     std::mutex m_bindingsMutex;
     BindingMap m_bindings;
+    QList<Hotkey> m_hotkeys;
+    QSet<int> m_capabilities; // written before the thread starts
 
     std::atomic<bool> m_wantActive{false};
     std::atomic<bool> m_grabbed{false};
@@ -88,4 +98,5 @@ private:
     libevdev_uinput *m_uinput = nullptr;
     QHash<int, int> m_outputCount;     // output code -> number of sources holding it
     QHash<int, QList<int>> m_held;     // source code -> outputs it pressed
+    QSet<int> m_heldModifiers;         // physical modifier keys down on this device
 };

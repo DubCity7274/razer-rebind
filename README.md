@@ -13,6 +13,9 @@ drives will show up.
 - The scroll wheel can be rebound too, for example wheel down → volume down.
 - A mouse button can send a keyboard shortcut, and a key can send a click.
 - Keys and buttons light up live as you press them.
+- **Profiles**: named sets of bindings for all your devices, such as "Default",
+  "Gaming" and "Editing". Switch from the toolbar, the tray, a **hotkey**, or the
+  command line.
 - Runs in the tray; can also run headless as a systemd user service.
 
 ## How it works
@@ -94,39 +97,103 @@ show a tray icon.
 **Ctrl+E**, or the toolbar or tray toggle, turns all remapping off and on.
 Turning it off hands the devices straight back to the system.
 
+## Profiles and hotkeys
+
+Each profile holds its own bindings for every device. The toolbar's
+**Profile** box and the **Profiles** menu switch between them and create,
+duplicate, rename and delete them. Everything you edit applies to the active
+profile.
+
+**Hotkeys** (toolbar → Hotkeys…) work in every profile and in any
+application. A hotkey can switch to a named profile, go to the next or
+previous profile, or turn remapping on/off:
+
+| Example hotkey | Action |
+|---|---|
+| Ctrl + Alt + 1 | Switch to "Default" |
+| Ctrl + Alt + 2 | Switch to "Gaming" |
+| Ctrl + mouse forward button | Next profile |
+| Ctrl + Alt + Pause | Turn remapping on/off |
+
+- Hotkeys are handled by the remapper, not by the desktop, so they work the
+  same on X11 and Wayland. The trigger key must be on a Razer device.
+  Modifiers count from any Razer device, so Ctrl on the Huntsman + a Viper
+  button works.
+- A hotkey takes priority over a binding on the same key, and is swallowed so
+  applications don't also see it. Hotkeys keep working while remapping is
+  off, so you can always turn it back on, but in that state the key also
+  reaches the application.
+- Avoid Super in hotkeys. GNOME and KDE open the launcher when Super is
+  released on its own, which is what they see when the rest of the hotkey is
+  swallowed.
+- A desktop notification shows which profile you switched to. You can turn
+  this off in the Hotkeys dialog.
+
+### Command line
+
+These options control the already-running instance (GUI or `--headless`):
+
+```bash
+razer-rebind --profile Gaming
+```
+
+```bash
+razer-rebind --next-profile
+```
+
+`--previous-profile`, `--toggle` and `--list-profiles` work the same way.
+Bind them to shortcuts in your desktop's keyboard settings if you want a
+trigger on a non-Razer keyboard or a script. Launching `razer-rebind` again
+brings the existing window to the front.
+
 ## Config file
 
-Bindings are saved to `~/.config/razer-rebind/bindings.json` as soon as you
-change them. They are keyed by device name, so the Viper Ultimate's wired and
-wireless modes share bindings. Key names are evdev names, so the file can be
-edited by hand:
+Everything is saved to `~/.config/razer-rebind/bindings.json` as soon as you
+change it. Bindings are keyed by device name, so the Viper Ultimate's wired
+and wireless modes share bindings. Key names are evdev names, so the file can
+be edited by hand. Files from version 0.1 are migrated into a "Default"
+profile automatically.
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "remappingEnabled": true,
-  "devices": {
-    "Razer Huntsman Elite": {
-      "enabled": true,
-      "bindings": {
-        "KEY_CAPSLOCK": ["KEY_ESC"],
-        "KEY_INSERT": [],
-        "KEY_PAUSE": ["KEY_LEFTCTRL", "KEY_LEFTALT", "KEY_DELETE"]
+  "notifications": true,
+  "activeProfile": "Gaming",
+  "profiles": [
+    {
+      "name": "Default",
+      "devices": {
+        "Razer Huntsman Elite": {
+          "enabled": true,
+          "bindings": { "KEY_CAPSLOCK": ["KEY_ESC"] }
+        }
       }
     },
-    "Razer Viper Ultimate": {
-      "enabled": true,
-      "bindings": {
-        "BTN_SIDE": ["KEY_LEFTCTRL", "KEY_C"],
-        "WHEEL_DOWN": ["KEY_VOLUMEDOWN"]
+    {
+      "name": "Gaming",
+      "devices": {
+        "Razer Huntsman Elite": {
+          "enabled": true,
+          "bindings": { "KEY_LEFTMETA": [], "KEY_PAUSE": ["KEY_LEFTCTRL", "KEY_LEFTALT", "KEY_DELETE"] }
+        },
+        "Razer Viper Ultimate": {
+          "enabled": true,
+          "bindings": { "BTN_SIDE": ["KEY_LEFTCTRL", "KEY_C"], "WHEEL_DOWN": ["KEY_VOLUMEDOWN"] }
+        }
       }
     }
-  }
+  ],
+  "hotkeys": [
+    { "modifiers": ["Ctrl", "Alt"], "key": "KEY_1", "action": "switch-profile", "profile": "Default" },
+    { "modifiers": ["Ctrl"], "key": "BTN_EXTRA", "action": "next-profile" }
+  ]
 }
 ```
 
 An empty list disables the input. `WHEEL_UP` and `WHEEL_DOWN` are the scroll
-wheel directions.
+wheel directions. Hotkey actions are `switch-profile`, `next-profile`,
+`previous-profile` and `toggle-remapping`.
 
 ## Limitations
 
@@ -139,7 +206,8 @@ wheel directions.
   each pair is rebound together. Use **Detect** to see what your mouse
   actually sends.
 - Bindings are one-to-one: one input sends one key or shortcut. There are no
-  layers, timed macros, or per-application profiles.
+  layers or timed macros, and profiles don't switch automatically per
+  application.
 - Don't run another evdev remapper (input-remapper, keyd, kmonad) on the same
   device. Only one program can grab it, and the app shows an error if it
   can't.
@@ -149,9 +217,11 @@ wheel directions.
 | File | Purpose |
 |---|---|
 | `src/razerdevice.*` | Device discovery through the OpenRazer sysfs tree |
-| `src/remapper.*` | Per-device worker thread: grab, remap, uinput output, LED forwarding |
-| `src/remapmanager.*` | Owns the remappers, follows hotplug via `/dev/input`, applies the profile |
-| `src/profile.*` | JSON bindings storage |
+| `src/remapper.*` | Per-device worker thread: grab, remap, hotkeys, uinput output, LED forwarding |
+| `src/remapmanager.*` | Owns the remappers, follows hotplug, applies the profile, runs hotkey actions, command socket, notifications |
+| `src/config.*` | Profiles, hotkeys, JSON storage |
+| `src/hotkeydialog.*` | Hotkey list and editor |
+| `src/inputdetector.*` | "Press it on the device" detection used by both editors |
 | `src/keys.*` | evdev key names and labels, and which codes are safe to emit |
 | `src/deviceview.*` | Clickable Huntsman Elite keyboard and Viper Ultimate mouse pictures |
 | `src/bindingdialog.*` | Binding editor (search, detect, record shortcut) |

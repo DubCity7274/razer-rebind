@@ -2,17 +2,22 @@
 
 #include "bindingdialog.h"
 #include "deviceview.h"
-#include "profile.h"
+#include "hotkeydialog.h"
+#include "config.h"
 #include "remapmanager.h"
 #include "remapper.h"
 
+#include <QActionGroup>
 #include <QApplication>
 #include <QCheckBox>
+#include <QComboBox>
+#include <QInputDialog>
 #include <QCloseEvent>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
@@ -26,6 +31,7 @@
 #include <QTableWidget>
 #include <QTimer>
 #include <QToolBar>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -57,9 +63,9 @@ QIcon appIcon(bool active)
     return icon;
 }
 
-MainWindow::MainWindow(Profile *profile, RemapManager *manager, QWidget *parent)
+MainWindow::MainWindow(Config *config, RemapManager *manager, QWidget *parent)
     : QMainWindow(parent)
-    , m_profile(profile)
+    , m_config(config)
     , m_manager(manager)
 {
     setWindowTitle(tr("Razer Rebind"));
@@ -169,19 +175,39 @@ MainWindow::MainWindow(Profile *profile, RemapManager *manager, QWidget *parent)
     toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     toolbar->addAction(m_toggleAction);
     toolbar->addAction(rescanAction);
+    toolbar->addSeparator();
+    toolbar->addWidget(new QLabel(tr(" Profile: ")));
+    m_profileCombo = new QComboBox;
+    m_profileCombo->setMinimumContentsLength(14);
+    m_profileCombo->setToolTip(tr("Active profile. Its bindings are applied to every device."));
+    toolbar->addWidget(m_profileCombo);
+    connect(m_profileCombo, &QComboBox::activated, this, [this](int i) {
+        m_manager->switchProfile(m_profileCombo->itemText(i));
+    });
+    auto *hotkeysAction = new QAction(QIcon::fromTheme(QStringLiteral("preferences-desktop-keyboard-shortcuts")),
+                                      tr("Hotkeys…"), this);
+    connect(hotkeysAction, &QAction::triggered, this, &MainWindow::showHotkeys);
+    m_profileMenu = new QMenu(tr("&Profiles"), this);
+    auto *profilesButton = new QToolButton;
+    profilesButton->setText(tr("Profiles"));
+    profilesButton->setMenu(m_profileMenu);
+    profilesButton->setPopupMode(QToolButton::InstantPopup);
+    toolbar->addWidget(profilesButton);
+    toolbar->addAction(hotkeysAction);
 
     auto *fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->addAction(m_toggleAction);
     fileMenu->addAction(rescanAction);
     fileMenu->addSeparator();
     fileMenu->addAction(quitAction);
+    menuBar()->addMenu(m_profileMenu);
     auto *helpMenu = menuBar()->addMenu(tr("&Help"));
     helpMenu->addAction(tr("Device permissions…"), this, &MainWindow::showPermissionHelp);
     helpMenu->addAction(tr("About"), this, [this] {
         QMessageBox::about(this, tr("About Razer Rebind"),
                            tr("<b>Razer Rebind</b><p>Key and button rebinding for Razer devices driven by the "
                               "OpenRazer kernel modules.</p><p>Bindings are stored in<br><code>%1</code></p>")
-                               .arg(m_profile->path().toHtmlEscaped()));
+                               .arg(m_config->path().toHtmlEscaped()));
     });
 
     // Wiring
@@ -190,11 +216,11 @@ MainWindow::MainWindow(Profile *profile, RemapManager *manager, QWidget *parent)
         const RazerDevice *dev = current();
         if (!dev)
             return;
-        DeviceProfile p = m_profile->device(dev->profileKey);
+        DeviceProfile p = m_config->device(dev->profileKey);
         if (p.enabled == on)
             return;
         p.enabled = on;
-        m_profile->setDevice(dev->profileKey, p);
+        m_config->setDevice(dev->profileKey, p);
         saveProfile();
     });
     for (DeviceView *v : {m_keyboardView, m_mouseView})
@@ -217,6 +243,11 @@ MainWindow::MainWindow(Profile *profile, RemapManager *manager, QWidget *parent)
 
     connect(m_manager, &RemapManager::devicesChanged, this, &MainWindow::rebuildDeviceList);
     connect(m_manager, &RemapManager::stateChanged, this, &MainWindow::refreshState);
+    connect(m_manager, &RemapManager::profileChanged, this, [this] {
+        refreshProfiles();
+        selectDevice();
+    });
+    connect(m_manager, &RemapManager::showRequested, this, &MainWindow::showFromBackground);
     connect(m_manager, &RemapManager::message, this, [this](const QString &msg) {
         statusBar()->showMessage(msg, 8000);
     });
@@ -238,7 +269,11 @@ MainWindow::MainWindow(Profile *profile, RemapManager *manager, QWidget *parent)
         currentView()->setPressed(code, pressed);
     });
 
+    m_profileStatus = new QLabel;
+    statusBar()->addPermanentWidget(m_profileStatus);
+
     setupTray();
+    refreshProfiles();
     rebuildDeviceList();
 }
 
@@ -254,11 +289,8 @@ void MainWindow::setupTray()
     m_tray = new QSystemTrayIcon(appIcon(m_manager->remappingEnabled()), this);
     m_tray->setToolTip(tr("Razer Rebind"));
     auto *menu = new QMenu(this);
-    menu->addAction(tr("Show window"), this, [this] {
-        showNormal();
-        raise();
-        activateWindow();
-    });
+    menu->addAction(tr("Show window"), this, &MainWindow::showFromBackground);
+    m_trayProfileMenu = menu->addMenu(tr("Profile"));
     menu->addAction(m_toggleAction);
     menu->addSeparator();
     menu->addAction(tr("Quit"), qApp, &QApplication::quit);
@@ -385,7 +417,7 @@ void MainWindow::selectDevice()
     {
         QSignalBlocker b(m_deviceEnabled);
         m_deviceEnabled->setEnabled(true);
-        m_deviceEnabled->setChecked(m_profile->device(dev->profileKey).enabled);
+        m_deviceEnabled->setChecked(m_config->device(dev->profileKey).enabled);
     }
     refreshBindings();
     refreshState();
@@ -426,7 +458,7 @@ void MainWindow::refreshState()
     }
     Remapper *r = m_manager->remapper(dev->hidPath);
     const QString error = m_manager->errorFor(dev->hidPath);
-    const DeviceProfile p = m_profile->device(dev->profileKey);
+    const DeviceProfile p = m_config->device(dev->profileKey);
     QString html;
     if (!error.isEmpty() || !r) {
         html = QStringLiteral("<span style='color:#d33'>⚠ %1</span> — <a href='#'>%2</a>")
@@ -449,7 +481,7 @@ void MainWindow::refreshState()
 void MainWindow::refreshBindings()
 {
     const RazerDevice *dev = current();
-    const BindingMap bindings = dev ? m_profile->device(dev->profileKey).bindings : BindingMap();
+    const BindingMap bindings = dev ? m_config->device(dev->profileKey).bindings : BindingMap();
 
     m_keyboardView->setBindings(dev && dev->kind == RazerDevice::Keyboard ? bindings : BindingMap());
     m_mouseView->setBindings(dev && dev->kind == RazerDevice::Mouse ? bindings : BindingMap());
@@ -481,7 +513,7 @@ void MainWindow::editBinding(int sourceCode)
     if (!dev)
         return;
     const RazerDevice device = *dev; // the list may change while the dialog is open
-    const BindingMap bindings = m_profile->device(device.profileKey).bindings;
+    const BindingMap bindings = m_config->device(device.profileKey).bindings;
 
     BindingDialog dlg(m_manager, device, this);
     if (sourceCode > 0) {
@@ -509,7 +541,7 @@ void MainWindow::storeBinding(int oldSource, int source, const QList<int> &targe
     const RazerDevice *dev = current();
     if (!dev)
         return;
-    DeviceProfile p = m_profile->device(dev->profileKey);
+    DeviceProfile p = m_config->device(dev->profileKey);
     if (oldSource > 0)
         p.bindings.remove(oldSource);
     // Mapping a key to exactly itself is the same as having no binding.
@@ -517,7 +549,7 @@ void MainWindow::storeBinding(int oldSource, int source, const QList<int> &targe
         p.bindings.remove(source);
     else
         p.bindings.insert(source, targets);
-    m_profile->setDevice(dev->profileKey, p);
+    m_config->setDevice(dev->profileKey, p);
     saveProfile();
 }
 
@@ -527,9 +559,9 @@ void MainWindow::removeSelectedBinding()
     QTableWidgetItem *item = m_table->item(m_table->currentRow(), 0);
     if (!dev || !item)
         return;
-    DeviceProfile p = m_profile->device(dev->profileKey);
+    DeviceProfile p = m_config->device(dev->profileKey);
     p.bindings.remove(item->data(Qt::UserRole).toInt());
-    m_profile->setDevice(dev->profileKey, p);
+    m_config->setDevice(dev->profileKey, p);
     saveProfile();
 }
 
@@ -542,16 +574,16 @@ void MainWindow::clearBindings()
                               tr("Remove every binding for the %1?").arg(dev->profileKey))
         != QMessageBox::Yes)
         return;
-    DeviceProfile p = m_profile->device(dev->profileKey);
+    DeviceProfile p = m_config->device(dev->profileKey);
     p.bindings.clear();
-    m_profile->setDevice(dev->profileKey, p);
+    m_config->setDevice(dev->profileKey, p);
     saveProfile();
 }
 
 void MainWindow::saveProfile()
 {
     QString error;
-    if (!m_profile->save(&error))
+    if (!m_config->save(&error))
         QMessageBox::warning(this, tr("Could not save bindings"), error);
     m_manager->applyProfile();
     refreshBindings();
@@ -572,4 +604,117 @@ void MainWindow::showPermissionHelp()
                    "sudo udevadm trigger</pre>"
                    "<p>Then press <b>Rescan devices</b> (F5).</p>"));
     box.exec();
+}
+
+// --- profiles -------------------------------------------------------------
+
+void MainWindow::showFromBackground()
+{
+    showNormal();
+    raise();
+    activateWindow();
+}
+
+void MainWindow::refreshProfiles()
+{
+    const QString active = m_config->activeProfile();
+    {
+        QSignalBlocker b(m_profileCombo);
+        m_profileCombo->clear();
+        m_profileCombo->addItems(m_config->profileNames());
+        m_profileCombo->setCurrentText(active);
+    }
+    fillProfileMenu(m_profileMenu);
+    if (m_trayProfileMenu)
+        fillProfileMenu(m_trayProfileMenu);
+    m_profileStatus->setText(tr("Profile: <b>%1</b>").arg(active.toHtmlEscaped()));
+    if (m_tray)
+        m_tray->setToolTip(tr("Razer Rebind — %1").arg(active));
+    setWindowTitle(tr("Razer Rebind — %1").arg(active));
+}
+
+void MainWindow::fillProfileMenu(QMenu *menu)
+{
+    menu->clear();
+    auto *group = new QActionGroup(menu);
+    for (const QString &name : m_config->profileNames()) {
+        // Show the hotkey that switches here, if any, like a menu shortcut.
+        QString text = name;
+        for (const Hotkey &h : std::as_const(m_config->hotkeys))
+            if (h.action == Hotkey::SwitchProfile && h.profile == name) {
+                text += QLatin1Char('\t') + h.triggerLabel();
+                break;
+            }
+        QAction *a = menu->addAction(text, this, [this, name] { m_manager->switchProfile(name); });
+        a->setCheckable(true);
+        a->setChecked(name == m_config->activeProfile());
+        group->addAction(a);
+    }
+    if (menu == m_trayProfileMenu)
+        return;
+    menu->addSeparator();
+    menu->addAction(tr("New profile…"), this, [this] { newProfile(false); });
+    menu->addAction(tr("Duplicate current profile…"), this, [this] { newProfile(true); });
+    menu->addAction(tr("Rename current profile…"), this, &MainWindow::renameProfile);
+    QAction *del = menu->addAction(tr("Delete current profile…"), this, &MainWindow::deleteProfile);
+    del->setEnabled(m_config->profileNames().size() > 1);
+    menu->addSeparator();
+    menu->addAction(tr("Hotkeys…"), this, &MainWindow::showHotkeys);
+}
+
+void MainWindow::newProfile(bool duplicate)
+{
+    const QString current = m_config->activeProfile();
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, duplicate ? tr("Duplicate profile") : tr("New profile"),
+                                               tr("Profile name:"), QLineEdit::Normal,
+                                               duplicate ? tr("%1 copy").arg(current) : QString(), &ok)
+                             .trimmed();
+    if (!ok || name.isEmpty())
+        return;
+    if (!m_config->addProfile(name, duplicate ? current : QString())) {
+        QMessageBox::warning(this, tr("New profile"), tr("A profile named “%1” already exists.").arg(name));
+        return;
+    }
+    m_manager->switchProfile(name); // saves
+}
+
+void MainWindow::renameProfile()
+{
+    const QString current = m_config->activeProfile();
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, tr("Rename profile"), tr("Profile name:"),
+                                               QLineEdit::Normal, current, &ok)
+                             .trimmed();
+    if (!ok || name.isEmpty() || name == current)
+        return;
+    if (!m_config->renameProfile(current, name)) {
+        QMessageBox::warning(this, tr("Rename profile"), tr("A profile named “%1” already exists.").arg(name));
+        return;
+    }
+    m_manager->switchProfile(name);
+}
+
+void MainWindow::deleteProfile()
+{
+    const QString current = m_config->activeProfile();
+    if (m_config->profileNames().size() <= 1)
+        return;
+    int hotkeys = 0;
+    for (const Hotkey &h : std::as_const(m_config->hotkeys))
+        if (h.action == Hotkey::SwitchProfile && h.profile == current)
+            ++hotkeys;
+    QString text = tr("Delete the profile “%1” and all of its bindings?").arg(current);
+    if (hotkeys)
+        text += QLatin1Char(' ') + tr("Its %n hotkey(s) will be removed too.", nullptr, hotkeys);
+    if (QMessageBox::question(this, tr("Delete profile"), text) != QMessageBox::Yes)
+        return;
+    m_config->removeProfile(current);
+    m_manager->switchProfile(m_config->activeProfile());
+}
+
+void MainWindow::showHotkeys()
+{
+    HotkeysDialog dlg(m_manager, m_config, this);
+    dlg.exec();
 }

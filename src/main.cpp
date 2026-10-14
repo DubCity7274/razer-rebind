@@ -1,10 +1,11 @@
+#include "config.h"
 #include "mainwindow.h"
-#include "profile.h"
 #include "remapmanager.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
+#include <QLocalSocket>
 #include <QLockFile>
 #include <QMessageBox>
 #include <QSocketNotifier>
@@ -43,66 +44,123 @@ void installSignalHandlers(QCoreApplication *app)
     sigaction(SIGHUP, &sa, nullptr);
 }
 
+// Send one command to the running instance. Returns false if none is running.
+bool sendCommand(const QString &command, QString *reply)
+{
+    QLocalSocket socket;
+    socket.connectToServer(RemapManager::serverName());
+    if (!socket.waitForConnected(1000))
+        return false;
+    socket.write(command.toUtf8() + '\n');
+    socket.flush();
+    while (socket.state() == QLocalSocket::ConnectedState && socket.waitForReadyRead(3000)) {}
+    *reply = QString::fromUtf8(socket.readAll()).trimmed();
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
 {
-    bool headless = false;
-    for (int i = 1; i < argc; ++i)
-        if (qstrcmp(argv[i], "--headless") == 0)
-            headless = true;
+    // Only the GUI needs a display; everything else must work from a script,
+    // a desktop shortcut, or a systemd service.
+    bool gui = true;
+    for (int i = 1; i < argc; ++i) {
+        const QByteArray arg = argv[i];
+        if (arg == "--headless" || arg == "--profile" || arg.startsWith("--profile=") || arg == "--next-profile"
+            || arg == "--previous-profile" || arg == "--toggle" || arg == "--list-profiles" || arg == "-h"
+            || arg == "--help" || arg == "-v" || arg == "--version")
+            gui = false;
+    }
 
-    std::unique_ptr<QCoreApplication> app(headless ? new QCoreApplication(argc, argv) : new QApplication(argc, argv));
+    std::unique_ptr<QCoreApplication> app(gui ? new QApplication(argc, argv) : new QCoreApplication(argc, argv));
     QCoreApplication::setApplicationName(QStringLiteral("razer-rebind"));
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.1.0"));
+    QCoreApplication::setApplicationVersion(QStringLiteral("0.2.0"));
 
     QCommandLineParser parser;
-    parser.setApplicationDescription(QStringLiteral("Key and button rebinding for Razer devices using the OpenRazer drivers."));
+    parser.setApplicationDescription(QStringLiteral("Key and button rebinding for Razer devices using the OpenRazer drivers.\n\n"
+                                                    "The profile options control the running instance, so they can be "
+                                                    "bound to shortcuts in your desktop's keyboard settings."));
     parser.addHelpOption();
     parser.addVersionOption();
     parser.addOption({QStringLiteral("headless"), QStringLiteral("Apply saved bindings without a window (for autostart / systemd).")});
     parser.addOption({QStringLiteral("minimized"), QStringLiteral("Start hidden in the system tray.")});
     parser.addOption({{QStringLiteral("c"), QStringLiteral("config")}, QStringLiteral("Bindings file to use."),
-                      QStringLiteral("file"), Profile::defaultPath()});
+                      QStringLiteral("file"), Config::defaultPath()});
+    parser.addOption({{QStringLiteral("p"), QStringLiteral("profile")}, QStringLiteral("Switch the running instance to <name>."),
+                      QStringLiteral("name")});
+    parser.addOption({QStringLiteral("next-profile"), QStringLiteral("Switch the running instance to the next profile.")});
+    parser.addOption({QStringLiteral("previous-profile"), QStringLiteral("Switch the running instance to the previous profile.")});
+    parser.addOption({QStringLiteral("toggle"), QStringLiteral("Turn remapping on or off in the running instance.")});
+    parser.addOption({QStringLiteral("list-profiles"), QStringLiteral("List profiles; * marks the active one.")});
     parser.process(*app);
 
+    QTextStream out(stdout);
     QTextStream err(stderr);
 
-    // Two instances would fight over the exclusive device grabs.
+    // Remote control of the running instance.
+    QString command;
+    if (parser.isSet(QStringLiteral("profile")))
+        command = QStringLiteral("profile ") + parser.value(QStringLiteral("profile"));
+    else if (parser.isSet(QStringLiteral("next-profile")))
+        command = QStringLiteral("next");
+    else if (parser.isSet(QStringLiteral("previous-profile")))
+        command = QStringLiteral("previous");
+    else if (parser.isSet(QStringLiteral("toggle")))
+        command = QStringLiteral("toggle");
+    else if (parser.isSet(QStringLiteral("list-profiles")))
+        command = QStringLiteral("list");
+    if (!command.isEmpty()) {
+        QString reply;
+        if (!sendCommand(command, &reply)) {
+            err << "Razer Rebind is not running." << Qt::endl;
+            return 1;
+        }
+        out << reply << Qt::endl;
+        return reply.startsWith(QLatin1String("No profile")) || reply.startsWith(QLatin1String("unknown")) ? 1 : 0;
+    }
+
+    // Two instances would fight over the exclusive device grabs. A second GUI
+    // launch just brings the running one to the front.
     const QString runtimeDir = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
     QLockFile lock(QDir(runtimeDir.isEmpty() ? QDir::tempPath() : runtimeDir).filePath(QStringLiteral("razer-rebind.lock")));
     lock.setStaleLockTime(0);
     if (!lock.tryLock()) {
-        const QString msg = QStringLiteral("Razer Rebind is already running (look for it in the system tray).");
-        if (headless)
-            err << msg << Qt::endl;
-        else
+        QString reply;
+        if (gui && sendCommand(QStringLiteral("show"), &reply))
+            return 0;
+        const QString msg = QStringLiteral("Razer Rebind is already running.");
+        if (gui)
             QMessageBox::information(nullptr, QStringLiteral("Razer Rebind"), msg);
+        else
+            err << msg << Qt::endl;
         return 1;
     }
 
     installSignalHandlers(app.get());
 
-    Profile profile;
+    Config config;
     QString error;
-    if (!profile.load(parser.value(QStringLiteral("config")), &error))
+    if (!config.load(parser.value(QStringLiteral("config")), &error))
         err << "Could not load bindings: " << error << Qt::endl;
 
-    RemapManager manager(&profile);
+    RemapManager manager(&config);
     QObject::connect(&manager, &RemapManager::message, [&err](const QString &msg) { err << msg << Qt::endl; });
+    manager.listen();
 
-    if (headless) {
+    if (!gui) {
         QObject::connect(&manager, &RemapManager::devicesChanged, [&manager, &err] {
             for (const RazerDevice &d : manager.devices())
                 err << "found " << d.name << " (" << d.eventNodes.join(QStringLiteral(", ")) << ")" << Qt::endl;
         });
+        err << "profile: " << config.activeProfile() << Qt::endl;
         manager.rescan();
         return app->exec();
     }
 
     static_cast<QApplication *>(app.get())->setQuitOnLastWindowClosed(false);
     manager.rescan();
-    MainWindow window(&profile, &manager);
+    MainWindow window(&config, &manager);
     if (!(parser.isSet(QStringLiteral("minimized")) && window.hasTray()))
         window.show();
     return app->exec();

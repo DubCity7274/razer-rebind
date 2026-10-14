@@ -21,6 +21,12 @@ QString label(int code);             // "Caps Lock"
 QString comboLabel(const QList<int> &codes);
 
 bool isModifier(int code);
+
+// Modifier bits for hotkeys; left and right keys count the same.
+enum Modifier : unsigned { ModCtrl = 1, ModShift = 2, ModAlt = 4, ModSuper = 8 };
+unsigned modifierBit(int code);   // 0 when not a modifier
+QString shortcutLabel(unsigned modifiers, int code); // "Ctrl + Alt + 1"
+
 bool isValidTarget(int code);        // can be emitted by the virtual device
 bool isValidSource(int code);
 QList<int> targetCodes();

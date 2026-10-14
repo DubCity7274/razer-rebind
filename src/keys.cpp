@@ -146,3 +146,30 @@ QList<int> sourceCodes()
 }
 
 } // namespace Keys
+
+namespace Keys {
+
+unsigned modifierBit(int code)
+{
+    switch (code) {
+    case KEY_LEFTCTRL: case KEY_RIGHTCTRL: return ModCtrl;
+    case KEY_LEFTSHIFT: case KEY_RIGHTSHIFT: return ModShift;
+    case KEY_LEFTALT: case KEY_RIGHTALT: return ModAlt;
+    case KEY_LEFTMETA: case KEY_RIGHTMETA: return ModSuper;
+    default: return 0;
+    }
+}
+
+QString shortcutLabel(unsigned modifiers, int code)
+{
+    QStringList parts;
+    if (modifiers & ModCtrl) parts << QStringLiteral("Ctrl");
+    if (modifiers & ModShift) parts << QStringLiteral("Shift");
+    if (modifiers & ModAlt) parts << QStringLiteral("Alt");
+    if (modifiers & ModSuper) parts << QStringLiteral("Super");
+    if (code > 0)
+        parts << label(code);
+    return parts.join(QStringLiteral(" + "));
+}
+
+} // namespace Keys

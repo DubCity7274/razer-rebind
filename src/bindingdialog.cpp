@@ -1,7 +1,7 @@
 #include "bindingdialog.h"
 
+#include "inputdetector.h"
 #include "keys.h"
-#include "remapmanager.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -133,8 +133,6 @@ void KeyRecorder::focusOutEvent(QFocusEvent *e)
 
 BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, QWidget *parent)
     : QDialog(parent)
-    , m_manager(manager)
-    , m_device(device)
 {
     setWindowTitle(tr("Edit binding — %1").arg(device.profileKey));
 
@@ -199,16 +197,13 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, Q
     for (QAbstractButton *b : std::initializer_list<QAbstractButton *>{m_remap, m_disable, m_ctrl, m_shift, m_alt, m_super})
         connect(b, &QAbstractButton::toggled, this, &BindingDialog::updateState);
     connect(m_record, &KeyRecorder::recorded, this, [this](const QList<int> &codes) { setTargets(codes); });
-    connect(m_detect, &QPushButton::clicked, this, &BindingDialog::startDetect);
-    connect(m_manager, &RemapManager::inputEvent, this, &BindingDialog::onInput);
-
-    m_detectTimer.setInterval(1000);
-    connect(&m_detectTimer, &QTimer::timeout, this, [this] {
-        if (--m_countdown <= 0)
-            stopDetect();
-        else
-            m_detect->setText(tr("Waiting… %1").arg(m_countdown));
-    });
+    // Detecting on the keyboard swallows typing into the dialog (Enter would
+    // accept it); on the mouse it swallows clicks, and Esc cancels.
+    const bool keyboard = device.kind == RazerDevice::Keyboard;
+    m_detector = new InputDetector(manager, m_detect, this);
+    m_detector->setDevice(device.profileKey);
+    m_detector->setSwallow(keyboard, !keyboard);
+    connect(m_detector, &InputDetector::detected, this, [this](int code) { setSource(code); });
 
     m_key->setCode(0);
     m_source->setCurrentIndex(-1);
@@ -289,80 +284,7 @@ void BindingDialog::accept()
         QMessageBox::warning(this, windowTitle(), tr("Choose the key or shortcut to send, or pick \"Do nothing\"."));
         return;
     }
-    stopDetect();
+    m_detector->stop();
     QDialog::accept();
 }
 
-// Detection listens to the physical device through its Remapper, so it works
-// for mouse buttons and keys alike, and even while the device is grabbed.
-void BindingDialog::startDetect()
-{
-    if (m_detecting) {
-        stopDetect();
-        return;
-    }
-    m_detecting = true;
-    m_detected = -1;
-    m_countdown = 10;
-    m_detect->setText(tr("Waiting… %1").arg(m_countdown));
-    m_source->setEnabled(false);
-    m_detectTimer.start();
-    // Keep the press from also triggering things in this dialog (Enter would
-    // accept it, a click would hit a button).
-    qApp->installEventFilter(this);
-}
-
-void BindingDialog::stopDetect()
-{
-    if (!m_detecting)
-        return;
-    m_detecting = false;
-    m_detectTimer.stop();
-    m_detect->setText(tr("Detect"));
-    m_source->setEnabled(true);
-    // Swallow input a little longer: the window system can deliver its copy of
-    // the release after ours.
-    QTimer::singleShot(200, this, [this] {
-        if (!m_detecting)
-            qApp->removeEventFilter(this);
-    });
-}
-
-void BindingDialog::onInput(const QString &profileKey, int code, bool pressed)
-{
-    if (!m_detecting || profileKey != m_device.profileKey)
-        return;
-    if (pressed && m_detected < 0) {
-        m_detected = code;
-        setSource(code);
-    }
-    if (!pressed && code == m_detected)
-        stopDetect();
-}
-
-bool BindingDialog::eventFilter(QObject *watched, QEvent *event)
-{
-    const bool keyboard = m_device.kind == RazerDevice::Keyboard;
-    switch (event->type()) {
-    case QEvent::KeyPress:
-    case QEvent::KeyRelease:
-    case QEvent::ShortcutOverride:
-        if (keyboard)
-            return true;
-        if (event->type() == QEvent::KeyPress && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
-            stopDetect();
-            return true;
-        }
-        break;
-    case QEvent::MouseButtonPress:
-    case QEvent::MouseButtonRelease:
-    case QEvent::MouseButtonDblClick:
-    case QEvent::Wheel:
-        if (!keyboard)
-            return true;
-        break;
-    default:
-        break;
-    }
-    return QDialog::eventFilter(watched, event);
-}

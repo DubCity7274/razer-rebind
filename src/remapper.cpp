@@ -21,6 +21,21 @@ bool testBit(const unsigned char *bits, int bit) { return bits[bit / 8] & (1 << 
 
 QString errnoText(int err) { return QString::fromLocal8Bit(std::strerror(err)); }
 
+// Physical modifiers held across all Razer devices, so a hotkey can combine
+// Ctrl on the keyboard with a mouse button. Indexed by modifier bit position.
+std::atomic<int> g_heldModifiers[4];
+
+unsigned heldModifierMask()
+{
+    unsigned mask = 0;
+    for (int i = 0; i < 4; ++i)
+        if (g_heldModifiers[i].load() > 0)
+            mask |= 1u << i;
+    return mask;
+}
+
+int modifierIndex(unsigned bit) { return __builtin_ctz(bit); }
+
 } // namespace
 
 Remapper::Remapper(RazerDevice device, QObject *parent)
@@ -58,6 +73,14 @@ bool Remapper::start(QString *error)
         unsigned char evBits[bitsToBytes(EV_CNT)] = {};
         if (::ioctl(src.fd, EVIOCGBIT(0, sizeof evBits), evBits) >= 0)
             src.hasLeds = testBit(evBits, EV_LED);
+        unsigned char keyBits[bitsToBytes(KEY_CNT)] = {};
+        if (::ioctl(src.fd, EVIOCGBIT(EV_KEY, sizeof keyBits), keyBits) >= 0)
+            for (int c = 1; c < KEY_CNT; ++c)
+                if (testBit(keyBits, c))
+                    m_capabilities.insert(c);
+        unsigned char relBits[bitsToBytes(REL_CNT)] = {};
+        if (::ioctl(src.fd, EVIOCGBIT(EV_REL, sizeof relBits), relBits) >= 0 && testBit(relBits, REL_WHEEL))
+            m_capabilities << Keys::WheelUp << Keys::WheelDown;
         m_sources.push_back(src);
     }
 
@@ -97,6 +120,12 @@ void Remapper::setBindings(const BindingMap &bindings)
 {
     std::lock_guard lock(m_bindingsMutex);
     m_bindings = bindings;
+}
+
+void Remapper::setHotkeys(const QList<Hotkey> &hotkeys)
+{
+    std::lock_guard lock(m_bindingsMutex);
+    m_hotkeys = hotkeys;
 }
 
 void Remapper::setActive(bool active)
@@ -170,6 +199,7 @@ void Remapper::run()
 
     m_pendingGrab = false;
     ungrab();
+    releaseModifiers();
     if (lost)
         emit disconnected();
     emit stateChanged();
@@ -293,8 +323,17 @@ void Remapper::handleEvent(const input_event &ev)
 {
     switch (ev.type) {
     case EV_KEY: {
-        if (ev.value != 2)
+        if (ev.value != 2) {
             emit inputEvent(ev.code, ev.value == 1);
+            trackModifier(ev.code, ev.value == 1);
+        }
+        // Hotkeys fire even while the device is not grabbed (e.g. to turn
+        // remapping back on); they are only swallowed when it is.
+        if (ev.value == 1 && !Keys::isModifier(ev.code) && matchHotkey(ev.code, true)) {
+            if (m_grabbed)
+                m_held.insert(ev.code, {});
+            return;
+        }
         if (!m_grabbed)
             return;
 
@@ -353,7 +392,7 @@ void Remapper::handleWheel(const input_event &ev)
         emit inputEvent(pseudo, true);
         emit inputEvent(pseudo, false);
     }
-    if (!m_grabbed)
+    if (matchHotkey(pseudo, ev.code == REL_WHEEL) || !m_grabbed)
         return;
 
     bool bound = false;
@@ -430,4 +469,39 @@ void Remapper::tap(const QList<int> &targets)
         release(*it);
         syn();
     }
+}
+
+bool Remapper::matchHotkey(int code, bool trigger)
+{
+    const unsigned mods = heldModifierMask();
+    std::lock_guard lock(m_bindingsMutex);
+    for (const Hotkey &h : std::as_const(m_hotkeys)) {
+        if (h.code == code && h.modifiers == mods) {
+            if (trigger)
+                emit hotkeyTriggered(int(h.action), h.profile);
+            return true;
+        }
+    }
+    return false;
+}
+
+void Remapper::trackModifier(int code, bool pressed)
+{
+    const unsigned bit = Keys::modifierBit(code);
+    if (!bit)
+        return;
+    if (pressed && !m_heldModifiers.contains(code)) {
+        m_heldModifiers.insert(code);
+        ++g_heldModifiers[modifierIndex(bit)];
+    } else if (!pressed && m_heldModifiers.remove(code)) {
+        --g_heldModifiers[modifierIndex(bit)];
+    }
+}
+
+void Remapper::releaseModifiers()
+{
+    // The device is going away; don't leave its modifiers counted as held.
+    for (int code : std::as_const(m_heldModifiers))
+        --g_heldModifiers[modifierIndex(Keys::modifierBit(code))];
+    m_heldModifiers.clear();
 }

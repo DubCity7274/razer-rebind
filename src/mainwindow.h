@@ -7,14 +7,16 @@
 
 class QAction;
 class QCheckBox;
+class QComboBox;
 class QLabel;
 class QListWidget;
+class QMenu;
 class QPushButton;
 class QStackedWidget;
 class QSystemTrayIcon;
 class QTableWidget;
 class DeviceView;
-class Profile;
+class Config;
 class RemapManager;
 
 class MainWindow : public QMainWindow
@@ -22,7 +24,7 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    MainWindow(Profile *profile, RemapManager *manager, QWidget *parent = nullptr);
+    MainWindow(Config *config, RemapManager *manager, QWidget *parent = nullptr);
 
     bool hasTray() const;
 
@@ -41,11 +43,18 @@ private:
     void saveProfile();
     void showPermissionHelp();
     void setupTray();
+    void refreshProfiles();
+    void fillProfileMenu(QMenu *menu);
+    void newProfile(bool duplicate);
+    void renameProfile();
+    void deleteProfile();
+    void showHotkeys();
+    void showFromBackground();
 
     const RazerDevice *current() const;
     DeviceView *currentView() const;
 
-    Profile *m_profile;
+    Config *m_config;
     RemapManager *m_manager;
     QString m_currentPath; // hidPath of the selected device
 
@@ -62,6 +71,10 @@ private:
     QPushButton *m_removeButton;
     QPushButton *m_clearButton;
     QAction *m_toggleAction;
+    QComboBox *m_profileCombo;
+    QMenu *m_profileMenu;
+    QMenu *m_trayProfileMenu = nullptr;
+    QLabel *m_profileStatus;
     QSystemTrayIcon *m_tray = nullptr;
     bool m_trayHintShown = false;
 
