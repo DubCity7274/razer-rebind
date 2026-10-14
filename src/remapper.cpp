@@ -1,5 +1,8 @@
 #include "remapper.h"
 
+#include <QDBusConnection>
+#include <QDBusMessage>
+
 #include <cstdlib>
 
 #include <libevdev/libevdev-uinput.h>
@@ -10,7 +13,9 @@
 #include <fcntl.h>
 #include <linux/input.h>
 #include <poll.h>
+#include <sched.h>
 #include <sys/ioctl.h>
+#include <sys/resource.h>
 #include <unistd.h>
 
 namespace {
@@ -35,6 +40,29 @@ unsigned heldModifierMask()
 }
 
 int modifierIndex(unsigned bit) { return __builtin_ctz(bit); }
+
+// Under heavy CPU load (a game, shader compilation) an ordinary thread can wait
+// a millisecond or more for its turn, delaying input. Ask for a modest
+// real-time priority like PipeWire does for audio: directly if the user is
+// allowed, otherwise through RealtimeKit. The thread sleeps in poll() almost
+// all the time, and RLIMIT_RTTIME stops it from ever hogging a CPU.
+QString raiseThreadPriority()
+{
+    constexpr int priority = 10;
+    sched_param param = {};
+    param.sched_priority = priority;
+    if (::sched_setscheduler(0, SCHED_FIFO | SCHED_RESET_ON_FORK, &param) == 0)
+        return {};
+
+    const rlimit rtTime = {200000, 200000}; // microseconds of CPU time without sleeping
+    ::setrlimit(RLIMIT_RTTIME, &rtTime);
+    QDBusMessage call = QDBusMessage::createMethodCall(
+        QStringLiteral("org.freedesktop.RealtimeKit1"), QStringLiteral("/org/freedesktop/RealtimeKit1"),
+        QStringLiteral("org.freedesktop.RealtimeKit1"), QStringLiteral("MakeThreadRealtime"));
+    call << quint64(::gettid()) << quint32(priority);
+    const QDBusMessage reply = QDBusConnection::systemBus().call(call, QDBus::Block, 2000);
+    return reply.type() == QDBusMessage::ReplyMessage ? QString() : reply.errorMessage();
+}
 
 } // namespace
 
@@ -144,6 +172,11 @@ void Remapper::run()
 {
     std::vector<pollfd> pfds;
     bool lost = false;
+
+    const QString priorityError = raiseThreadPriority();
+    if (!priorityError.isEmpty())
+        qWarning("%s: no real-time priority for input (%s); input may lag under heavy CPU load",
+                 qPrintable(m_device.name), qPrintable(priorityError));
 
     while (!m_quit && !lost) {
         const bool want = m_wantActive.load();
@@ -262,7 +295,13 @@ void Remapper::ungrab()
 bool Remapper::createVirtualDevice()
 {
     libevdev *tmpl = libevdev_new();
-    const QByteArray name = ("Razer Rebind: " + m_device.name).toUtf8();
+    // Take the physical device's own name: together with the same vendor
+    // and product id, KDE and libinput then apply the settings made for the
+    // real device (pointer acceleration profile, speed, quirks) to this one.
+    char sourceName[256] = {};
+    if (m_sources.empty() || ::ioctl(m_sources.front().fd, EVIOCGNAME(sizeof sourceName - 1), sourceName) <= 0)
+        qstrncpy(sourceName, ("Razer Rebind: " + m_device.name).toUtf8().constData(), sizeof sourceName);
+    const QByteArray name(sourceName);
     libevdev_set_name(tmpl, name.constData());
     libevdev_set_id_bustype(tmpl, BUS_VIRTUAL);
     libevdev_set_id_vendor(tmpl, m_device.vendorId);
