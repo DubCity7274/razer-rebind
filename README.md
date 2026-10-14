@@ -1,264 +1,238 @@
 # Razer Rebind
 
-A Qt 6 app for rebinding keys and buttons on Razer devices that use the
-[OpenRazer](https://openrazer.github.io/) kernel drivers. It was built for the
-**Razer Huntsman Elite** (`razerkbd`) and the **Razer Viper Ultimate**
-(`razermouse`, wired and wireless), but any keyboard or mouse that OpenRazer
-drives will show up.
+Rebind the keys and buttons of Razer keyboards and mice on Linux. Razer
+Rebind works with the [OpenRazer](https://openrazer.github.io/) kernel
+drivers, runs on X11 and Wayland, and needs no root once installed.
 
-- Click a key on the keyboard picture, or a button on the mouse picture, to
-  rebind it. You can also use **Detect** and press the key on the device.
-- Send any key, mouse button, or shortcut (Ctrl/Shift/Alt/Super + key), or
-  disable the input. **Record shortcut** captures a combination as you type it.
-- The scroll wheel can be rebound too, for example wheel down → volume down.
-- A mouse button can send a keyboard shortcut, and a key can send a click.
-- Keys and buttons light up live as you press them.
-- **Profiles**: named sets of bindings for all your devices, such as "Default",
-  "Gaming" and "Editing". Switch from the toolbar, the tray, a **hotkey**, or the
-  command line.
-- Runs in the tray; can also run headless as a systemd user service.
+- **Rebind anything:** click a key on the keyboard picture or a button on the
+  mouse picture, or press it on the device. Send another key, a mouse button,
+  a shortcut such as Ctrl + C, or nothing at all. The scroll wheel can be
+  rebound too, and a mouse button can type a shortcut.
+- **Profiles:** keep separate sets of bindings, such as "Desktop", "Gaming"
+  and "Editing", and switch between them instantly.
+- **Global hotkeys:** switch profiles or turn remapping off from inside a
+  game, with a key combination on your Razer keyboard or mouse.
+- **Built for gaming:** adds about 0.015 ms of input delay, even with every
+  CPU core busy (see [Performance](#performance)). Your KDE pointer settings
+  keep working.
+- **Stays out of the way:** runs in the system tray or as a background
+  service. Devices with nothing to remap aren't touched at all.
 
-## How it works
+## Supported devices
 
-The OpenRazer kernel modules handle lighting, DPI, battery and similar
-settings, but they don't provide a key-remapping interface. Remapping is done
-in userspace:
+Razer Rebind was developed with the **Razer Huntsman Elite** keyboard and the
+**Razer Viper Ultimate** mouse (wired and wireless), which get a full
+clickable picture of the device. Any other keyboard or mouse driven by
+OpenRazer shows up too, and all its keys and buttons can be bound through
+the bindings list and **Detect**.
 
-1. **Discovery through OpenRazer.** The app reads
-   `/sys/bus/hid/drivers/razerkbd|razermouse/*`. The interface with a
-   `device_type` attribute is the device. Its sibling HID interfaces on the
-   same USB device give all of its `/dev/input/eventN` nodes. Media keys and
-   the dial arrive on a different node than the letters, so every node is
-   needed. Serial, firmware and battery level come from the same sysfs
-   attributes.
-2. **Exclusive grab.** When a device has bindings, the app takes all of its
-   event nodes with `EVIOCGRAB`, so the desktop stops seeing the device
-   directly. It waits until no key is held, so nothing gets stuck down.
-3. **Re-emit through uinput.** Events go out through a virtual device named
-   `Razer Rebind: <device>`, with the bindings applied. Caps/Num/Scroll Lock
-   LED changes are passed back to the real keyboard.
+## Requirements
 
-A device with no bindings is never grabbed. The app only watches it so it can
-show live key presses.
+- Linux with the **OpenRazer kernel modules** loaded (`razerkbd`,
+  `razermouse`). See [OpenRazer's install guide](https://openrazer.github.io/#download).
+  The OpenRazer daemon and frontends such as Polychromatic are optional and
+  can run alongside.
+- A desktop session (KDE Plasma, GNOME, or others) on X11 or Wayland.
 
-## Installing on Fedora / Nobara
+## Installation
 
-Download the RPM from the repo's **Releases** page, or from the
-**Artifacts** of any run of the RPM workflow under **Actions**. Or build
-the RPM in a clean Fedora container (needs `podman`):
+### Fedora and Nobara
+
+Download the latest `razer-rebind-*.x86_64.rpm` from
+[Releases](../../releases/latest), then install it:
 
 ```bash
-./packaging/build-rpm.sh
+sudo dnf install ./razer-rebind-*.x86_64.rpm
 ```
 
-Then install it:
+The package sets up device permissions for you. Then start **Razer Rebind**
+from your application menu.
+
+### Other distributions
+
+Build from source as described in [CONTRIBUTING.md](CONTRIBUTING.md#building),
+then install the app and the permission rule (see
+[Permissions](#permissions-and-privacy)):
 
 ```bash
-sudo dnf install ./dist/razer-rebind-*.x86_64.rpm
+sudo cmake --install build
 ```
-
-The package installs the app, its menu entry, the udev permission rule
-described below (applied right away, no replug needed), and the
-`razer-rebind` systemd user service. Use `FEDORA=43 ./packaging/build-rpm.sh`
-to build for another Fedora release.
-
-To publish a release, bump `Version:` in `packaging/razer-rebind.spec` and
-`project(... VERSION ...)` in `CMakeLists.txt`, add a `%changelog` entry,
-commit, then tag and push:
-
-```bash
-git tag v0.3.0 && git push origin v0.3.0
-```
-
-The workflow builds the RPM and creates the GitHub Release with it attached.
-It refuses to publish if the tag doesn't match the spec version.
-
-## Building from source
-
-Fedora / Nobara:
-
-```bash
-sudo dnf install cmake gcc-c++ qt6-qtbase-devel libevdev-devel
-```
-
-Debian / Ubuntu:
-
-```bash
-sudo apt install cmake g++ qt6-base-dev libevdev-dev pkg-config
-```
-
-Then:
-
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
-```
-
-```bash
-./build/razer-rebind
-```
-
-## Permissions
-
-The RPM sets this up for you. When building from source, note that the app needs read access to the Razer event nodes and write access to
-`/dev/uinput`. The bundled udev rule grants both to the user logged in at the
-local seat, using `uaccess`, the same mechanism used for sound cards and game
-controllers:
 
 ```bash
 sudo install -m644 data/70-razer-rebind.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
 ```
 
-Anything you run as your user can then read your Razer keyboard's keystrokes.
-That is the price of doing remapping without root. Don't run the app with
-`sudo` instead: it would put its config in root's home directory and couldn't
-show a tray icon.
+## Usage
 
-## Running in the background
+### Rebinding keys and buttons
 
-- **With a tray icon:** closing the window keeps it running in the tray. Use
-  `razer-rebind --minimized` in your desktop's autostart.
-- **Headless (systemd user service):** installed by the RPM, or by
-  `sudo cmake --install build`:
+1. Pick your device on the left.
+2. Click a key or button on the picture. You can also click **Add binding…**
+   and press **Detect** to press the key on the device itself.
+3. Choose what it should do: another key, a shortcut (tick the modifiers or
+   use **Record shortcut**), or **Do nothing**.
+
+Bound keys are highlighted, and keys light up while you hold them. Bindings
+are saved and applied immediately. **Ctrl+E** turns all remapping off and
+on; when it's off, your devices behave exactly as if the app weren't running.
+
+### Profiles
+
+Each profile has its own bindings for every device. Use the **Profile** box
+in the toolbar to switch, and the **Profiles** menu to create, duplicate,
+rename or delete profiles. Edits always apply to the active profile.
+
+### Hotkeys
+
+Open **Hotkeys…** to set up key combinations that work in every profile and
+in any application, including full-screen games. A hotkey can:
+
+- switch to a specific profile,
+- go to the next or previous profile,
+- turn remapping on or off.
+
+For example, Ctrl + Alt + 1 for "Desktop" and Ctrl + Alt + 2 for "Gaming",
+or Ctrl + a mouse side button to cycle profiles. A notification shows which
+profile you switched to; you can turn that off in the Hotkeys window.
+
+Good to know:
+
+- The key or button that triggers a hotkey must be on a Razer device. The
+  modifiers can be on any Razer device, so Ctrl on the keyboard + a mouse
+  button works.
+- Applications don't see the hotkey, except while remapping is turned off.
+  Hotkeys stay active then too, so you can always turn remapping back on.
+- Avoid Super in hotkeys: KDE and GNOME open the launcher when they see Super
+  pressed and released on its own.
+
+### Running in the background
+
+Closing the window keeps Razer Rebind running in the system tray. To have
+your bindings active from login:
+
+- **With a tray icon:** add Razer Rebind to your desktop's autostart and
+  give it the `--minimized` option.
+- **Without a window:** enable the background service:
 
   ```bash
   systemctl --user enable --now razer-rebind.service
   ```
 
-  Only one instance runs at a time. Stop the service before editing bindings
-  in the GUI, then restart it.
-
-**Ctrl+E**, or the toolbar or tray toggle, turns all remapping off and on.
-Turning it off hands the devices straight back to the system.
-
-## Profiles and hotkeys
-
-Each profile holds its own bindings for every device. The toolbar's
-**Profile** box and the **Profiles** menu switch between them and create,
-duplicate, rename and delete them. Everything you edit applies to the active
-profile.
-
-**Hotkeys** (toolbar → Hotkeys…) work in every profile and in any
-application. A hotkey can switch to a named profile, go to the next or
-previous profile, or turn remapping on/off:
-
-| Example hotkey | Action |
-|---|---|
-| Ctrl + Alt + 1 | Switch to "Default" |
-| Ctrl + Alt + 2 | Switch to "Gaming" |
-| Ctrl + mouse forward button | Next profile |
-| Ctrl + Alt + Pause | Turn remapping on/off |
-
-- Hotkeys are handled by the remapper, not by the desktop, so they work the
-  same on X11 and Wayland. The trigger key must be on a Razer device.
-  Modifiers count from any Razer device, so Ctrl on the Huntsman + a Viper
-  button works.
-- A hotkey takes priority over a binding on the same key, and is swallowed so
-  applications don't also see it. Hotkeys keep working while remapping is
-  off, so you can always turn it back on, but in that state the key also
-  reaches the application.
-- Avoid Super in hotkeys. GNOME and KDE open the launcher when Super is
-  released on its own, which is what they see when the rest of the hotkey is
-  swallowed.
-- A desktop notification shows which profile you switched to. You can turn
-  this off in the Hotkeys dialog.
+  Only one copy of the app can run at a time, so stop the service before
+  opening the window to change bindings, then start it again.
 
 ### Command line
 
-These options control the already-running instance (GUI or `--headless`):
+The running app (window or background service) can be controlled from a
+terminal, a script, or a shortcut in your desktop's keyboard settings. That's
+useful for switching profiles from a non-Razer keyboard:
 
 ```bash
 razer-rebind --profile Gaming
 ```
 
-```bash
-razer-rebind --next-profile
-```
+| Option | Effect |
+|---|---|
+| `--profile <name>` | Switch to the named profile |
+| `--next-profile`, `--previous-profile` | Cycle through profiles |
+| `--toggle` | Turn remapping on or off |
+| `--list-profiles` | List profiles; `*` marks the active one |
 
-`--previous-profile`, `--toggle` and `--list-profiles` work the same way.
-Bind them to shortcuts in your desktop's keyboard settings if you want a
-trigger on a non-Razer keyboard or a script. Launching `razer-rebind` again
-brings the existing window to the front.
+## Performance
 
-## Config file
+Razer Rebind sits between your device and the desktop, so every event it
+remaps passes through it. That path is short, and the app's input threads
+run with real-time priority so a busy game can't delay them.
 
-Everything is saved to `~/.config/razer-rebind/bindings.json` as soon as you
-change it. Bindings are keyed by device name, so the Viper Ultimate's wired
-and wireless modes share bindings. Key names are evdev names, so the file can
-be edited by hand. Files from version 0.1 are migrated into a "Default"
-profile automatically.
+Delay added by the app, measured on a Viper Ultimate at 1000 events per
+second, on a 16-thread CPU:
+
+| Situation | Typical | 99% of events under | Worst seen |
+|---|---|---|---|
+| Idle desktop | 0.013 ms | 0.026 ms | 0.15 ms |
+| All CPU cores at 100% | 0.014 ms | 0.022 ms | 0.027 ms |
+
+For comparison, a 1000 Hz mouse reports every 1 ms, and a frame at 144 fps
+lasts 6.9 ms.
+
+A device with no bindings, and no hotkeys it could trigger, isn't touched at
+all: its input goes straight to the desktop as usual. A device with bindings
+appears to the desktop as a virtual device with the same name and IDs, so
+per-device settings such as KDE's pointer acceleration profile and speed
+still apply.
+
+## Permissions and privacy
+
+To remap a device, the app must read its input and create a virtual input
+device. The included udev rule allows exactly that for the user sitting at
+the computer: it covers Razer input devices (USB vendor `1532`) and
+`/dev/uinput`, using the same mechanism that gives you access to sound cards
+and game controllers. Other users and remote logins get nothing.
+
+This means any program running as you can read your Razer keyboard's
+keystrokes, which is the trade-off for remapping without root. Don't run
+Razer Rebind with `sudo` instead.
+
+Razer Rebind makes no network connections. Your settings stay in
+`~/.config/razer-rebind/bindings.json`.
+
+## Limitations
+
+- **Fn key (Huntsman Elite):** handled inside the OpenRazer driver and never
+  reaches applications, so it can't be rebound. Fn combinations can be,
+  using whatever key the driver turns them into.
+- **DPI button (Viper Ultimate):** handled by the mouse's firmware.
+- **Viper Ultimate side buttons:** with the factory settings, the right-hand
+  buttons send the same signals as the left-hand ones, so each pair is
+  rebound together. **Detect** shows what your mouse actually sends.
+- **One-to-one bindings:** one input sends one key or shortcut. There are no
+  layers or timed macros, and profiles don't switch automatically when you
+  change applications.
+- **One remapper per device:** don't use another input remapper
+  (input-remapper, keyd, kmonad) on the same device; only one program can
+  take it over. Razer Rebind shows an error if it can't.
+
+## Configuration file
+
+Settings are saved to `~/.config/razer-rebind/bindings.json` whenever you
+change something. The file can also be edited by hand while the app isn't
+running. Keys use Linux input names such as `KEY_CAPSLOCK` and `BTN_SIDE`;
+`WHEEL_UP` and `WHEEL_DOWN` are the scroll wheel, and an empty list disables
+an input.
 
 ```json
 {
   "version": 2,
-  "remappingEnabled": true,
-  "notifications": true,
   "activeProfile": "Gaming",
   "profiles": [
-    {
-      "name": "Default",
-      "devices": {
-        "Razer Huntsman Elite": {
-          "enabled": true,
-          "bindings": { "KEY_CAPSLOCK": ["KEY_ESC"] }
-        }
-      }
-    },
     {
       "name": "Gaming",
       "devices": {
         "Razer Huntsman Elite": {
           "enabled": true,
-          "bindings": { "KEY_LEFTMETA": [], "KEY_PAUSE": ["KEY_LEFTCTRL", "KEY_LEFTALT", "KEY_DELETE"] }
+          "bindings": { "KEY_LEFTMETA": [], "KEY_CAPSLOCK": ["KEY_LEFTCTRL"] }
         },
         "Razer Viper Ultimate": {
           "enabled": true,
-          "bindings": { "BTN_SIDE": ["KEY_LEFTCTRL", "KEY_C"], "WHEEL_DOWN": ["KEY_VOLUMEDOWN"] }
+          "bindings": { "BTN_SIDE": ["KEY_LEFTCTRL", "KEY_C"] }
         }
       }
     }
   ],
   "hotkeys": [
-    { "modifiers": ["Ctrl", "Alt"], "key": "KEY_1", "action": "switch-profile", "profile": "Default" },
-    { "modifiers": ["Ctrl"], "key": "BTN_EXTRA", "action": "next-profile" }
+    { "modifiers": ["Ctrl", "Alt"], "key": "KEY_1", "action": "switch-profile", "profile": "Gaming" }
   ]
 }
 ```
 
-An empty list disables the input. `WHEEL_UP` and `WHEEL_DOWN` are the scroll
-wheel directions. Hotkey actions are `switch-profile`, `next-profile`,
-`previous-profile` and `toggle-remapping`.
+Hotkey actions are `switch-profile`, `next-profile`, `previous-profile` and
+`toggle-remapping`.
 
-## Limitations
+## Contributing
 
-- **Fn (Huntsman Elite)** is handled inside the `razerkbd` driver and never
-  reaches userspace, so it can't be rebound. Fn combinations reach the app as
-  whatever key the driver turns them into, which can be bound.
-- **DPI button (Viper Ultimate)** is handled by the mouse firmware.
-- **Viper Ultimate side buttons:** with the factory onboard mapping, the
-  right-hand pair sends the same codes as the left-hand pair (mouse 4/5), so
-  each pair is rebound together. Use **Detect** to see what your mouse
-  actually sends.
-- Bindings are one-to-one: one input sends one key or shortcut. There are no
-  layers or timed macros, and profiles don't switch automatically per
-  application.
-- Don't run another evdev remapper (input-remapper, keyd, kmonad) on the same
-  device. Only one program can grab it, and the app shows an error if it
-  can't.
-
-## Source layout
-
-| File | Purpose |
-|---|---|
-| `src/razerdevice.*` | Device discovery through the OpenRazer sysfs tree |
-| `src/remapper.*` | Per-device worker thread: grab, remap, hotkeys, uinput output, LED forwarding |
-| `src/remapmanager.*` | Owns the remappers, follows hotplug, applies the profile, runs hotkey actions, command socket, notifications |
-| `src/config.*` | Profiles, hotkeys, JSON storage |
-| `src/hotkeydialog.*` | Hotkey list and editor |
-| `src/inputdetector.*` | "Press it on the device" detection used by both editors |
-| `src/keys.*` | evdev key names and labels, and which codes are safe to emit |
-| `src/deviceview.*` | Clickable Huntsman Elite keyboard and Viper Ultimate mouse pictures |
-| `src/bindingdialog.*` | Binding editor (search, detect, record shortcut) |
-| `src/mainwindow.*` | Main window and tray |
+Bug reports and pull requests are welcome. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for how to build the app, how it works
+internally, and how releases are made.
 
 ## License
 
