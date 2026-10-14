@@ -37,3 +37,37 @@ install(TARGETS razer-rebind RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES data/razer-rebind.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/razer-rebind.service DESTINATION lib/systemd/user)
 install(FILES data/70-razer-rebind.rules DESTINATION lib/udev/rules.d)
+
+# Distribution packages build docs into the package themselves; RPM uses %doc.
+option(RAZER_REBIND_INSTALL_DOCS "Install README and LICENSE to share/doc" OFF)
+if(RAZER_REBIND_INSTALL_DOCS)
+    install(FILES README.md LICENSE DESTINATION ${CMAKE_INSTALL_DOCDIR})
+endif()
+
+# .deb packages: cmake -DCMAKE_INSTALL_PREFIX=/usr -DRAZER_REBIND_DEB_DISTRO=debian12 ... && cpack
+set(RAZER_REBIND_DEB_DISTRO "" CACHE STRING "Distro tag for .deb packages, e.g. debian12 or ubuntu24.04")
+set(CPACK_GENERATOR DEB)
+set(CPACK_PACKAGE_NAME razer-rebind)
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_PACKAGE_CONTACT "DubCity7274 <111620773+DubCity7274@users.noreply.github.com>")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Key and button rebinding for Razer keyboards and mice (OpenRazer)")
+set(CPACK_DEBIAN_PACKAGE_DESCRIPTION
+"Razer Rebind is a Qt 6 app for rebinding keys and buttons on Razer devices
+driven by the OpenRazer kernel drivers, with per-device profiles, global
+hotkeys and low battery alerts. It installs a udev rule that gives the user at
+the local seat access to Razer input devices and /dev/uinput.")
+set(CPACK_DEBIAN_PACKAGE_SECTION utils)
+set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/DubCity7274/razer-rebind")
+if(RAZER_REBIND_DEB_DISTRO)
+    set(CPACK_DEBIAN_PACKAGE_RELEASE "1~${RAZER_REBIND_DEB_DISTRO}")
+    execute_process(COMMAND dpkg --print-architecture OUTPUT_VARIABLE deb_arch OUTPUT_STRIP_TRAILING_WHITESPACE)
+    # GitHub release assets can't contain "~", so the file name spells it out.
+    set(CPACK_DEBIAN_FILE_NAME "razer-rebind_${PROJECT_VERSION}-1_${RAZER_REBIND_DEB_DISTRO}_${deb_arch}.deb")
+endif()
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+# Platform plugins aren't linked, so shlibdeps can't see them.
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "qt6-qpa-plugins")
+set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "qt6-wayland")
+set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/packaging/debian/postinst;${CMAKE_CURRENT_SOURCE_DIR}/packaging/debian/postrm")
+set(CPACK_DEBIAN_PACKAGE_CONTROL_STRICT_PERMISSION ON)
+include(CPack)
