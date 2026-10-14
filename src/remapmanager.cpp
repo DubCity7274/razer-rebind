@@ -4,7 +4,9 @@
 #include "remapper.h"
 
 #include <QDBusConnection>
+#include <QDir>
 #include <QLocalServer>
+#include <QStandardPaths>
 #include <QLocalSocket>
 #include <QSet>
 
@@ -219,6 +221,11 @@ void RemapManager::applyProfile()
 
 QString RemapManager::serverName()
 {
+    // The per-user runtime directory (/run/user/<uid>) is private to the user;
+    // fall back to a name in the temp directory without one.
+    const QString runtime = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
+    if (!runtime.isEmpty())
+        return QDir(runtime).filePath(QStringLiteral("razer-rebind.sock"));
     return QStringLiteral("razer-rebind-%1").arg(::getuid());
 }
 

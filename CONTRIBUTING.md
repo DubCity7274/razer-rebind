@@ -50,10 +50,16 @@ and puts the result in `dist/`:
 ./packaging/build-tarball.sh
 ```
 
+```bash
+./packaging/build-appimage.sh
+```
+
 `FEDORA=43 ./packaging/build-rpm.sh` targets another Fedora release, and
 `build-deb.sh` takes any of `debian:12`, `debian:13`, `ubuntu:24.04` or
-`ubuntu:26.04`. The tarball is built on Debian 12, the oldest supported base,
-so it runs on anything newer. CI calls the same scripts with `--direct`, which
+`ubuntu:26.04`. The tarball and AppImage are built on Debian 12, the oldest supported
+base, so they run on anything newer. The AppImage uses
+[linuxdeploy](https://github.com/linuxdeploy/linuxdeploy) and its Qt plugin at
+pinned releases, checked against SHA-256 checksums in the script. CI calls the same scripts with `--direct`, which
 builds on the current machine.
 
 ## How it works
@@ -81,8 +87,8 @@ builds on the current machine.
 
 Hotkeys are matched inside the worker threads. Modifier state is shared
 between devices, so Ctrl on the keyboard combines with a mouse button. A
-local socket lets `razer-rebind --profile ...` control the running
-instance. Desktop notifications go through `org.freedesktop.Notifications`.
+local socket in the user's runtime directory lets
+`razer-rebind --profile ...` control the running instance. Desktop notifications go through `org.freedesktop.Notifications`.
 
 Battery levels come from OpenRazer's `charge_level` and `charge_status`
 attributes. Each read is a USB round trip to the wireless device, so they
@@ -105,7 +111,7 @@ are polled once a minute on a background thread.
 | `src/hotkeydialog.*` | Hotkey list and editor |
 | `src/inputdetector.*` | "Press it on the device" detection used by both editors |
 | `src/mainwindow.*` | Main window, profiles UI and tray |
-| `data/` | udev rule, desktop entry, systemd user service |
+| `data/` | udev rule, desktop entry, icon, systemd user service |
 | `packaging/` | RPM spec, Debian maintainer scripts, tarball installer, and the build scripts |
 
 ## Making a release
@@ -119,7 +125,7 @@ are polled once a minute on a background thread.
    git tag vX.Y.Z && git push origin vX.Y.Z
    ```
 
-The Packages workflow builds the RPMs, .debs and tarball, and publishes a
+The Packages workflow builds the RPMs, .debs, tarball and AppImage, and publishes a
 GitHub Release with all of them and a `SHA256SUMS` file attached. It refuses
 to run if the spec, `CMakeLists.txt` and tag versions disagree. Every push and
 pull request also builds all packages; they can be downloaded from the

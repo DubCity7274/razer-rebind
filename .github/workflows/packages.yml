@@ -1,4 +1,4 @@
-# Builds every package on each push and pull request (download them from the
+# Builds every package (RPM, .deb, tarball, AppImage) on each push and pull request (download them from the
 # run's "Artifacts"). Pushing a tag like v0.5.0 also publishes a GitHub Release
 # with all packages and a SHA256SUMS file attached; the tag must match the
 # version in packaging/razer-rebind.spec and CMakeLists.txt.
@@ -117,9 +117,33 @@ jobs:
           path: dist/*.tar.gz
           if-no-files-found: error
 
+  appimage:
+    name: AppImage
+    needs: version
+    runs-on: ubuntu-latest
+    container: docker.io/library/debian:12
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends build-essential cmake pkg-config qt6-base-dev \
+            qt6-base-dev-tools qt6-qpa-plugins qt6-wayland libevdev-dev git ca-certificates curl file
+      - uses: actions/checkout@v7
+      - name: Build
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          ./packaging/build-appimage.sh --direct
+      - uses: actions/upload-artifact@v7
+        with:
+          name: appimage
+          path: dist/*.AppImage
+          if-no-files-found: error
+
   release:
     name: Publish release
-    needs: [rpm, deb, tarball]
+    needs: [rpm, deb, tarball, appimage]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:

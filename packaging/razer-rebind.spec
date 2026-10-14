@@ -63,8 +63,10 @@ udevadm trigger --subsystem-match=input --subsystem-match=misc --action=change >
 
 %changelog
 * Wed Oct 14 2026 dub <111620773+DubCity7274@users.noreply.github.com> - 0.4.1-1
-- Packages for Debian 12/13, Ubuntu 24.04/26.04 and Fedora 43, plus a
-  pre-compiled tarball for other distributions
+- Packages for Debian 12/13, Ubuntu 24.04/26.04 and Fedora 43, a
+  pre-compiled tarball, and an AppImage
+- App icon; --print-udev-rule installs the permission rule without a package
+- Command socket moved to the private per-user runtime directory
 
 * Wed Oct 14 2026 dub <111620773+DubCity7274@users.noreply.github.com> - 0.4.0-1
 - Profiles per device: switch the keyboard and mouse independently, or all

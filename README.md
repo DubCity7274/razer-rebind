@@ -57,6 +57,7 @@ menu entry, the background service and the device permission rule.
 | Fedora 43, 44, Nobara | `razer-rebind-<version>.fc43.x86_64.rpm` or `.fc44` |
 | Debian 12, 13 | `razer-rebind_<version>-1_debian12_amd64.deb` or `_debian13` |
 | Ubuntu 24.04, 26.04 | `razer-rebind_<version>-1_ubuntu24.04_amd64.deb` or `_ubuntu26.04` |
+| Any distribution, no install | `razer-rebind-<version>-x86_64.AppImage` |
 | Other distributions | `razer-rebind-<version>-linux-x86_64.tar.gz` (pre-compiled) |
 
 `SHA256SUMS` in the release lets you check that a download is intact
@@ -76,6 +77,26 @@ sudo apt install ./razer-rebind_*_ubuntu24.04_amd64.deb
 
 Use the file for your release; `apt` installs the Qt and libevdev libraries it
 needs.
+
+### AppImage
+
+The AppImage bundles everything it needs and runs on distributions at least
+as new as Debian 12. Make it executable and start it:
+
+```bash
+chmod +x razer-rebind-*-x86_64.AppImage && ./razer-rebind-*-x86_64.AppImage
+```
+
+An AppImage can't install the device permission rule by itself, so run this
+once (Razer Rebind also shows this command, ready to copy, under
+**Help → Device permissions**):
+
+```bash
+./razer-rebind-*-x86_64.AppImage --print-udev-rule | sudo tee /etc/udev/rules.d/70-razer-rebind.rules >/dev/null && sudo udevadm control --reload && sudo udevadm trigger
+```
+
+To start it at login, add the AppImage to your desktop's autostart with the
+`--minimized` option.
 
 ### Other distributions
 
