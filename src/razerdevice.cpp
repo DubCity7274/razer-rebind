@@ -98,3 +98,8 @@ QList<RazerDevice> discoverRazerDevices()
     }
     return result;
 }
+
+bool RazerDevice::hasBattery() const
+{
+    return QFile::exists(hidPath + QStringLiteral("/charge_level"));
+}

@@ -27,61 +27,62 @@ const struct { unsigned bit; const char *name; } ModifierNames[] = {
     {Keys::ModCtrl, "Ctrl"}, {Keys::ModShift, "Shift"}, {Keys::ModAlt, "Alt"}, {Keys::ModSuper, "Super"},
 };
 
-QMap<QString, DeviceProfile> devicesFromJson(const QJsonObject &devices)
+BindingMap bindingsFromJson(const QJsonObject &bindings)
 {
-    QMap<QString, DeviceProfile> out;
-    for (auto it = devices.begin(); it != devices.end(); ++it) {
-        const QJsonObject obj = it.value().toObject();
-        DeviceProfile dp;
-        dp.enabled = obj.value(QStringLiteral("enabled")).toBool(true);
-        const QJsonObject bindings = obj.value(QStringLiteral("bindings")).toObject();
-        for (auto b = bindings.begin(); b != bindings.end(); ++b) {
-            const int source = Keys::fromName(b.key());
-            if (source < 0)
-                continue;
-            QList<int> targets;
-            bool valid = true;
-            for (const QJsonValue &v : b.value().toArray()) {
-                const int code = Keys::fromName(v.toString());
-                valid = valid && Keys::isValidTarget(code);
-                targets << code;
-            }
-            if (valid)
-                dp.bindings.insert(source, targets);
+    BindingMap out;
+    for (auto b = bindings.begin(); b != bindings.end(); ++b) {
+        const int source = Keys::fromName(b.key());
+        if (source < 0)
+            continue;
+        QList<int> targets;
+        bool valid = true;
+        for (const QJsonValue &v : b.value().toArray()) {
+            const int code = Keys::fromName(v.toString());
+            valid = valid && Keys::isValidTarget(code);
+            targets << code;
         }
-        out.insert(it.key(), dp);
+        if (valid)
+            out.insert(source, targets);
     }
     return out;
 }
 
-QJsonObject devicesToJson(const QMap<QString, DeviceProfile> &devices)
+QJsonObject bindingsToJson(const BindingMap &bindings)
 {
+    QList<int> sources = bindings.keys();
+    std::sort(sources.begin(), sources.end());
     QJsonObject out;
-    for (auto it = devices.cbegin(); it != devices.cend(); ++it) {
-        QList<int> sources = it->bindings.keys();
-        std::sort(sources.begin(), sources.end());
-        QJsonObject bindings;
-        for (int source : sources) {
-            QJsonArray targets;
-            for (int t : it->bindings.value(source))
-                targets.append(Keys::name(t));
-            bindings.insert(Keys::name(source), targets);
-        }
-        out.insert(it.key(), QJsonObject{{QStringLiteral("enabled"), it->enabled},
-                                         {QStringLiteral("bindings"), bindings}});
+    for (int source : sources) {
+        QJsonArray targets;
+        for (int t : bindings.value(source))
+            targets.append(Keys::name(t));
+        out.insert(Keys::name(source), targets);
     }
     return out;
+}
+
+QString tr(const char *text)
+{
+    return QCoreApplication::translate("Hotkey", text);
 }
 
 } // namespace
 
+QString shortDeviceName(const QString &deviceKey)
+{
+    return deviceKey.startsWith(QLatin1String("Razer ")) ? deviceKey.mid(6) : deviceKey;
+}
+
 QString Hotkey::actionLabel() const
 {
+    const QString who = device.isEmpty() ? tr("all devices") : shortDeviceName(device);
     switch (action) {
-    case SwitchProfile: return QCoreApplication::translate("Hotkey", "Switch to “%1”").arg(profile);
-    case NextProfile: return QCoreApplication::translate("Hotkey", "Next profile");
-    case PreviousProfile: return QCoreApplication::translate("Hotkey", "Previous profile");
-    case ToggleRemapping: return QCoreApplication::translate("Hotkey", "Turn remapping on/off");
+    case SwitchProfile:
+        return device.isEmpty() ? tr("Switch all devices to “%1”").arg(profile)
+                                : tr("Switch %1 to “%2”").arg(who, profile);
+    case NextProfile: return tr("Next profile (%1)").arg(who);
+    case PreviousProfile: return tr("Previous profile (%1)").arg(who);
+    case ToggleRemapping: return tr("Turn remapping on/off");
     }
     return {};
 }
@@ -94,19 +95,16 @@ QString Config::defaultPath()
 bool Config::load(const QString &path, QString *error)
 {
     m_path = path;
-    m_order.clear();
-    m_profiles.clear();
+    m_deviceOrder.clear();
+    m_devices.clear();
     hotkeys.clear();
 
     QFile f(path);
-    if (!f.exists()) {
-        ensureProfile();
+    if (!f.exists())
         return true;
-    }
     if (!f.open(QIODevice::ReadOnly)) {
         if (error)
             *error = f.errorString();
-        ensureProfile();
         return false;
     }
     QJsonParseError parseError;
@@ -114,29 +112,78 @@ bool Config::load(const QString &path, QString *error)
     if (!doc.isObject()) {
         if (error)
             *error = QStringLiteral("%1: %2").arg(path, parseError.errorString());
-        ensureProfile();
         return false;
     }
 
     const QJsonObject root = doc.object();
+    const int version = root.value(QStringLiteral("version")).toInt(1);
     remappingEnabled = root.value(QStringLiteral("remappingEnabled")).toBool(true);
     notifications = root.value(QStringLiteral("notifications")).toBool(true);
+    const QJsonObject battery = root.value(QStringLiteral("battery")).toObject();
+    batteryAlerts = battery.value(QStringLiteral("alerts")).toBool(true);
+    batteryThreshold = std::clamp(battery.value(QStringLiteral("threshold")).toInt(20), 1, 99);
 
-    if (root.contains(QStringLiteral("profiles"))) {
-        for (const QJsonValue &v : root.value(QStringLiteral("profiles")).toArray()) {
-            const QJsonObject p = v.toObject();
-            const QString name = p.value(QStringLiteral("name")).toString().trimmed();
-            if (name.isEmpty() || m_profiles.contains(name))
+    auto addDevice = [this](const QString &key) -> DeviceSettings & {
+        if (!m_devices.contains(key))
+            m_deviceOrder << key;
+        return m_devices[key];
+    };
+
+    if (version >= 3) {
+        for (const QJsonValue &dv : root.value(QStringLiteral("devices")).toArray()) {
+            const QJsonObject d = dv.toObject();
+            const QString key = d.value(QStringLiteral("name")).toString();
+            if (key.isEmpty() || m_devices.contains(key))
                 continue;
-            m_order << name;
-            m_profiles.insert(name, devicesFromJson(p.value(QStringLiteral("devices")).toObject()));
+            DeviceSettings &ds = addDevice(key);
+            ds.enabled = d.value(QStringLiteral("enabled")).toBool(true);
+            ds.active = d.value(QStringLiteral("activeProfile")).toString();
+            for (const QJsonValue &pv : d.value(QStringLiteral("profiles")).toArray()) {
+                const QJsonObject p = pv.toObject();
+                const QString name = p.value(QStringLiteral("name")).toString().trimmed();
+                if (!name.isEmpty() && !findProfile(key, name))
+                    ds.profiles << Profile{name, bindingsFromJson(p.value(QStringLiteral("bindings")).toObject())};
+            }
+        }
+    } else if (version == 2) {
+        // Global profiles: every device gets every profile, active = the global one.
+        const QString active = root.value(QStringLiteral("activeProfile")).toString();
+        const QJsonArray profiles = root.value(QStringLiteral("profiles")).toArray();
+        for (const QJsonValue &pv : profiles)
+            for (const QString &key : pv.toObject().value(QStringLiteral("devices")).toObject().keys())
+                addDevice(key);
+        for (const QString &key : std::as_const(m_deviceOrder)) {
+            DeviceSettings &ds = m_devices[key];
+            for (const QJsonValue &pv : profiles) {
+                const QJsonObject p = pv.toObject();
+                const QString name = p.value(QStringLiteral("name")).toString().trimmed();
+                const QJsonObject d = p.value(QStringLiteral("devices")).toObject().value(key).toObject();
+                if (name.isEmpty() || findProfile(key, name))
+                    continue;
+                ds.profiles << Profile{name, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject())};
+                if (name == active) {
+                    ds.active = name;
+                    ds.enabled = d.value(QStringLiteral("enabled")).toBool(true);
+                }
+            }
         }
     } else {
-        // Version 1 files had a single set of bindings.
-        m_order << DefaultProfile;
-        m_profiles.insert(DefaultProfile, devicesFromJson(root.value(QStringLiteral("devices")).toObject()));
+        // Version 1: one set of bindings per device.
+        const QJsonObject devices = root.value(QStringLiteral("devices")).toObject();
+        for (auto it = devices.begin(); it != devices.end(); ++it) {
+            const QJsonObject d = it.value().toObject();
+            DeviceSettings &ds = addDevice(it.key());
+            ds.enabled = d.value(QStringLiteral("enabled")).toBool(true);
+            ds.profiles << Profile{DefaultProfile, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject())};
+        }
     }
-    m_active = root.value(QStringLiteral("activeProfile")).toString();
+
+    for (auto it = m_devices.begin(); it != m_devices.end(); ++it) {
+        if (it->profiles.isEmpty())
+            it->profiles << Profile{DefaultProfile, {}};
+        if (!findProfile(it.key(), it->active))
+            it->active = it->profiles.first().name;
+    }
 
     for (const QJsonValue &v : root.value(QStringLiteral("hotkeys")).toArray()) {
         const QJsonObject o = v.toObject();
@@ -156,20 +203,27 @@ bool Config::load(const QString &path, QString *error)
                 known = true;
             }
         h.profile = o.value(QStringLiteral("profile")).toString();
+        h.device = o.value(QStringLiteral("device")).toString();
         if (known)
             hotkeys << h;
     }
-
-    ensureProfile();
     return true;
 }
 
 bool Config::save(QString *error) const
 {
-    QJsonArray profiles;
-    for (const QString &name : m_order)
-        profiles.append(QJsonObject{{QStringLiteral("name"), name},
-                                    {QStringLiteral("devices"), devicesToJson(m_profiles.value(name))}});
+    QJsonArray devices;
+    for (const QString &key : m_deviceOrder) {
+        const DeviceSettings &ds = m_devices[key];
+        QJsonArray profiles;
+        for (const Profile &p : ds.profiles)
+            profiles.append(QJsonObject{{QStringLiteral("name"), p.name},
+                                        {QStringLiteral("bindings"), bindingsToJson(p.bindings)}});
+        devices.append(QJsonObject{{QStringLiteral("name"), key},
+                                   {QStringLiteral("enabled"), ds.enabled},
+                                   {QStringLiteral("activeProfile"), ds.active},
+                                   {QStringLiteral("profiles"), profiles}});
+    }
 
     QJsonArray hotkeyArray;
     for (const Hotkey &h : hotkeys) {
@@ -183,15 +237,20 @@ bool Config::save(QString *error) const
                 o.insert(QStringLiteral("action"), QLatin1String(a.id));
         if (h.action == Hotkey::SwitchProfile)
             o.insert(QStringLiteral("profile"), h.profile);
+        if (!h.device.isEmpty() && h.action != Hotkey::ToggleRemapping)
+            o.insert(QStringLiteral("device"), h.device);
         hotkeyArray.append(o);
     }
 
-    const QJsonObject root{{QStringLiteral("version"), 2},
-                           {QStringLiteral("remappingEnabled"), remappingEnabled},
-                           {QStringLiteral("notifications"), notifications},
-                           {QStringLiteral("activeProfile"), m_active},
-                           {QStringLiteral("profiles"), profiles},
-                           {QStringLiteral("hotkeys"), hotkeyArray}};
+    const QJsonObject root{
+        {QStringLiteral("version"), 3},
+        {QStringLiteral("remappingEnabled"), remappingEnabled},
+        {QStringLiteral("notifications"), notifications},
+        {QStringLiteral("battery"), QJsonObject{{QStringLiteral("alerts"), batteryAlerts},
+                                                {QStringLiteral("threshold"), batteryThreshold}}},
+        {QStringLiteral("devices"), devices},
+        {QStringLiteral("hotkeys"), hotkeyArray},
+    };
 
     QDir().mkpath(QFileInfo(m_path).absolutePath());
     QSaveFile f(m_path);
@@ -209,65 +268,151 @@ bool Config::save(QString *error) const
     return true;
 }
 
-void Config::ensureProfile()
+bool Config::ensureDevice(const QString &device)
 {
-    if (m_order.isEmpty()) {
-        m_order << DefaultProfile;
-        m_profiles.insert(DefaultProfile, {});
-    }
-    if (!m_profiles.contains(m_active))
-        m_active = m_order.first();
-}
-
-bool Config::setActiveProfile(const QString &name)
-{
-    if (!m_profiles.contains(name))
+    if (device.isEmpty() || m_devices.contains(device))
         return false;
-    m_active = name;
+    m_deviceOrder << device;
+    DeviceSettings &ds = m_devices[device];
+    ds.profiles << Profile{DefaultProfile, {}};
+    ds.active = DefaultProfile;
     return true;
 }
 
-QString Config::adjacentProfile(int step) const
+const Config::Profile *Config::findProfile(const QString &device, const QString &name) const
 {
-    const int i = int(m_order.indexOf(m_active));
-    const int n = int(m_order.size());
-    return m_order.value(((i + step) % n + n) % n);
+    const auto it = m_devices.constFind(device);
+    if (it == m_devices.constEnd())
+        return nullptr;
+    for (const Profile &p : it->profiles)
+        if (p.name == name)
+            return &p;
+    return nullptr;
 }
 
-bool Config::addProfile(const QString &name, const QString &copyFrom)
+DeviceProfile Config::device(const QString &device) const
 {
-    if (name.trimmed().isEmpty() || m_profiles.contains(name))
+    DeviceProfile out;
+    const auto it = m_devices.constFind(device);
+    if (it == m_devices.constEnd())
+        return out;
+    out.enabled = it->enabled;
+    if (const Profile *p = findProfile(device, it->active))
+        out.bindings = p->bindings;
+    return out;
+}
+
+void Config::setDevice(const QString &device, const DeviceProfile &profile)
+{
+    ensureDevice(device);
+    DeviceSettings &ds = m_devices[device];
+    ds.enabled = profile.enabled;
+    for (Profile &p : ds.profiles)
+        if (p.name == ds.active)
+            p.bindings = profile.bindings;
+}
+
+QStringList Config::profileNames(const QString &device) const
+{
+    QStringList out;
+    for (const Profile &p : m_devices.value(device).profiles)
+        out << p.name;
+    return out;
+}
+
+QString Config::activeProfile(const QString &device) const
+{
+    return m_devices.value(device).active;
+}
+
+bool Config::hasProfile(const QString &device, const QString &name) const
+{
+    return findProfile(device, name) != nullptr;
+}
+
+bool Config::setActiveProfile(const QString &device, const QString &name)
+{
+    if (!findProfile(device, name))
         return false;
-    m_order << name;
-    m_profiles.insert(name, m_profiles.value(copyFrom));
+    m_devices[device].active = name;
     return true;
 }
 
-bool Config::renameProfile(const QString &from, const QString &to)
+QString Config::adjacentProfile(const QString &device, int step) const
 {
-    if (!m_profiles.contains(from) || to.trimmed().isEmpty() || m_profiles.contains(to))
+    const QStringList names = profileNames(device);
+    if (names.isEmpty())
+        return {};
+    const int i = int(names.indexOf(activeProfile(device)));
+    const int n = int(names.size());
+    return names.value(((i + step) % n + n) % n);
+}
+
+QStringList Config::allProfileNames() const
+{
+    QStringList out;
+    for (const QString &key : m_deviceOrder)
+        for (const Profile &p : m_devices[key].profiles)
+            if (!out.contains(p.name))
+                out << p.name;
+    return out;
+}
+
+bool Config::anyDeviceHasProfile(const QString &name) const
+{
+    for (const QString &key : m_deviceOrder)
+        if (findProfile(key, name))
+            return true;
+    return false;
+}
+
+bool Config::addProfile(const QString &device, const QString &name, const QString &copyFrom)
+{
+    if (name.trimmed().isEmpty() || findProfile(device, name))
         return false;
-    m_profiles.insert(to, m_profiles.take(from));
-    m_order[m_order.indexOf(from)] = to;
-    if (m_active == from)
-        m_active = to;
+    ensureDevice(device);
+    const Profile *source = findProfile(device, copyFrom);
+    m_devices[device].profiles << Profile{name, source ? source->bindings : BindingMap()};
+    return true;
+}
+
+bool Config::renameProfile(const QString &device, const QString &from, const QString &to)
+{
+    if (!findProfile(device, from) || to.trimmed().isEmpty() || findProfile(device, to))
+        return false;
+    DeviceSettings &ds = m_devices[device];
+    for (Profile &p : ds.profiles)
+        if (p.name == from)
+            p.name = to;
+    if (ds.active == from)
+        ds.active = to;
+    // Hotkeys aimed at this device follow the rename; all-device hotkeys
+    // follow it only once no other device uses the old name.
+    const bool stillUsed = anyDeviceHasProfile(from);
     for (Hotkey &h : hotkeys)
-        if (h.action == Hotkey::SwitchProfile && h.profile == from)
+        if (h.action == Hotkey::SwitchProfile && h.profile == from && (h.device == device || (h.device.isEmpty() && !stillUsed)))
             h.profile = to;
     return true;
 }
 
-bool Config::removeProfile(const QString &name)
+bool Config::removeProfile(const QString &device, const QString &name)
 {
-    if (!m_profiles.contains(name) || m_order.size() <= 1)
+    if (!findProfile(device, name) || m_devices[device].profiles.size() <= 1)
         return false;
-    const int index = int(m_order.indexOf(name));
-    m_order.removeAt(index);
-    m_profiles.remove(name);
-    if (m_active == name)
-        m_active = m_order.value(std::min(index, int(m_order.size()) - 1));
+    DeviceSettings &ds = m_devices[device];
+    int index = 0;
+    for (int i = 0; i < ds.profiles.size(); ++i)
+        if (ds.profiles[i].name == name)
+            index = i;
+    ds.profiles.removeAt(index);
+    if (ds.active == name)
+        ds.active = ds.profiles[std::min(index, int(ds.profiles.size()) - 1)].name;
+    const bool stillUsed = anyDeviceHasProfile(name);
     hotkeys.erase(std::remove_if(hotkeys.begin(), hotkeys.end(),
-                                 [&](const Hotkey &h) { return h.action == Hotkey::SwitchProfile && h.profile == name; }),
+                                 [&](const Hotkey &h) {
+                                     return h.action == Hotkey::SwitchProfile && h.profile == name
+                                            && (h.device == device || (h.device.isEmpty() && !stillUsed));
+                                 }),
                   hotkeys.end());
     return true;
 }

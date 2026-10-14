@@ -8,10 +8,13 @@ drivers, runs on X11 and Wayland, and needs no root once installed.
   mouse picture, or press it on the device. Send another key, a mouse button,
   a shortcut such as Ctrl + C, or nothing at all. The scroll wheel can be
   rebound too, and a mouse button can type a shortcut.
-- **Profiles:** keep separate sets of bindings, such as "Desktop", "Gaming"
-  and "Editing", and switch between them instantly.
+- **Profiles per device:** keep separate sets of bindings, such as
+  "Desktop", "Gaming" and "Editing", for each device. Switch the keyboard
+  without touching the mouse, or switch everything at once.
 - **Global hotkeys:** switch profiles or turn remapping off from inside a
   game, with a key combination on your Razer keyboard or mouse.
+- **Low battery alerts:** get a desktop notification when a wireless
+  device's battery drops below a level you choose.
 - **Built for gaming:** adds about 0.015 ms of input delay, even with every
   CPU core busy (see [Performance](#performance)). Your KDE pointer settings
   keep working.
@@ -78,9 +81,16 @@ on; when it's off, your devices behave exactly as if the app weren't running.
 
 ### Profiles
 
-Each profile has its own bindings for every device. Use the **Profile** box
-in the toolbar to switch, and the **Profiles** menu to create, duplicate,
-rename or delete profiles. Edits always apply to the active profile.
+Each device has its own profiles and its own active profile, so you can
+switch your keyboard to "Gaming" while the mouse stays on "Desktop". Use the
+**Profile** box next to the device's name to switch, and **Manage** to
+create, duplicate, rename or delete that device's profiles. Edits always
+apply to the device's active profile.
+
+Give profiles on different devices the same name to switch them together:
+the **Profiles** menu (and the tray menu) lists every device's profiles, plus
+an **All devices** section that switches every device that has a profile of
+that name.
 
 ### Hotkeys
 
@@ -91,9 +101,19 @@ in any application, including full-screen games. A hotkey can:
 - go to the next or previous profile,
 - turn remapping on or off.
 
-For example, Ctrl + Alt + 1 for "Desktop" and Ctrl + Alt + 2 for "Gaming",
-or Ctrl + a mouse side button to cycle profiles. A notification shows which
-profile you switched to; you can turn that off in the Hotkeys window.
+Each hotkey applies to one device or to all devices. For example:
+
+| Hotkey | Device | Action |
+|---|---|---|
+| Ctrl + Alt + 1 | All devices | Switch to "Desktop" |
+| Ctrl + Alt + 2 | All devices | Switch to "Gaming" |
+| Ctrl + Alt + 3 | Viper Ultimate | Switch to "FPS" |
+| Ctrl + mouse side button | Huntsman Elite | Next profile |
+
+With **All devices**, every device that has a profile of that name switches
+to it, and next/previous moves each device through its own profiles. A
+notification shows what you switched to; you can turn that off in
+**Settings**.
 
 Good to know:
 
@@ -104,6 +124,18 @@ Good to know:
   Hotkeys stay active then too, so you can always turn remapping back on.
 - Avoid Super in hotkeys: KDE and GNOME open the launcher when they see Super
   pressed and released on its own.
+
+### Low battery alerts
+
+Razer Rebind checks the battery of wireless devices, such as the Viper
+Ultimate, once a minute. When one drops to the level you set (20% by
+default), you get a desktop notification, and another reminder every 5% after
+that until you plug it in. The current level is shown in the device list and
+the tray tooltip.
+
+Change the level, turn the alerts off, or send a test notification in
+**Settings**. Alerts work in the background service too, so you don't need
+another battery app.
 
 ### Running in the background
 
@@ -133,10 +165,17 @@ razer-rebind --profile Gaming
 
 | Option | Effect |
 |---|---|
-| `--profile <name>` | Switch to the named profile |
-| `--next-profile`, `--previous-profile` | Cycle through profiles |
+| `--profile <name>` | Switch every device that has this profile to it |
+| `--next-profile`, `--previous-profile` | Move each device to its next or previous profile |
+| `--device <name>` | Apply the options above to one device only; any unique part of its name works, e.g. `viper` |
 | `--toggle` | Turn remapping on or off |
-| `--list-profiles` | List profiles; `*` marks the active one |
+| `--list-profiles` | List each device's profiles; `*` marks the active one |
+
+For example, to switch only the mouse:
+
+```bash
+razer-rebind --device viper --profile FPS
+```
 
 ## Performance
 
@@ -202,31 +241,38 @@ an input.
 
 ```json
 {
-  "version": 2,
-  "activeProfile": "Gaming",
-  "profiles": [
+  "version": 3,
+  "battery": { "alerts": true, "threshold": 20 },
+  "devices": [
     {
-      "name": "Gaming",
-      "devices": {
-        "Razer Huntsman Elite": {
-          "enabled": true,
-          "bindings": { "KEY_LEFTMETA": [], "KEY_CAPSLOCK": ["KEY_LEFTCTRL"] }
-        },
-        "Razer Viper Ultimate": {
-          "enabled": true,
-          "bindings": { "BTN_SIDE": ["KEY_LEFTCTRL", "KEY_C"] }
-        }
-      }
+      "name": "Razer Huntsman Elite",
+      "enabled": true,
+      "activeProfile": "Gaming",
+      "profiles": [
+        { "name": "Desktop", "bindings": { "KEY_CAPSLOCK": ["KEY_ESC"] } },
+        { "name": "Gaming", "bindings": { "KEY_LEFTMETA": [] } }
+      ]
+    },
+    {
+      "name": "Razer Viper Ultimate",
+      "enabled": true,
+      "activeProfile": "Desktop",
+      "profiles": [
+        { "name": "Desktop", "bindings": { "BTN_SIDE": ["KEY_LEFTCTRL", "KEY_C"] } }
+      ]
     }
   ],
   "hotkeys": [
-    { "modifiers": ["Ctrl", "Alt"], "key": "KEY_1", "action": "switch-profile", "profile": "Gaming" }
+    { "modifiers": ["Ctrl", "Alt"], "key": "KEY_2", "action": "switch-profile", "profile": "Gaming" },
+    { "modifiers": ["Ctrl"], "key": "BTN_EXTRA", "action": "next-profile", "device": "Razer Huntsman Elite" }
   ]
 }
 ```
 
 Hotkey actions are `switch-profile`, `next-profile`, `previous-profile` and
-`toggle-remapping`.
+`toggle-remapping`; leave out `device` to apply a hotkey to all devices.
+Settings files from older versions are converted automatically: every device
+gets each of your existing profiles.
 
 ## Contributing
 

@@ -1,11 +1,13 @@
 #include "mainwindow.h"
 
+#include "batterymonitor.h"
 #include "bindingdialog.h"
 #include "deviceview.h"
 #include "hotkeydialog.h"
 #include "config.h"
 #include "remapmanager.h"
 #include "remapper.h"
+#include "settingsdialog.h"
 
 #include <QActionGroup>
 #include <QApplication>
@@ -63,10 +65,11 @@ QIcon appIcon(bool active)
     return icon;
 }
 
-MainWindow::MainWindow(Config *config, RemapManager *manager, QWidget *parent)
+MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *battery, QWidget *parent)
     : QMainWindow(parent)
     , m_config(config)
     , m_manager(manager)
+    , m_battery(battery)
 {
     setWindowTitle(tr("Razer Rebind"));
     setWindowIcon(appIcon(true));
@@ -94,9 +97,30 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, QWidget *parent)
     connect(m_state, &QLabel::linkActivated, this, &MainWindow::showPermissionHelp);
     m_deviceEnabled = new QCheckBox(tr("Remap this device"));
 
+    // Each device has its own profiles; the selector sits with the device.
+    m_profileCombo = new QComboBox;
+    m_profileCombo->setMinimumContentsLength(14);
+    m_profileCombo->setToolTip(tr("This device's active profile"));
+    connect(m_profileCombo, &QComboBox::activated, this, [this](int i) {
+        if (const RazerDevice *dev = current())
+            m_manager->switchProfile(dev->profileKey, m_profileCombo->itemText(i));
+    });
+    m_deviceProfileMenu = new QMenu(this);
+    auto *profileButton = new QToolButton;
+    profileButton->setText(tr("Manage"));
+    profileButton->setToolTip(tr("New, duplicate, rename or delete this device's profiles"));
+    profileButton->setMenu(m_deviceProfileMenu);
+    profileButton->setPopupMode(QToolButton::InstantPopup);
+    auto *profileRow = new QHBoxLayout;
+    profileRow->addWidget(new QLabel(tr("Profile:")));
+    profileRow->addWidget(m_profileCombo);
+    profileRow->addWidget(profileButton);
+    profileRow->addSpacing(16);
+    profileRow->addWidget(m_deviceEnabled);
+
     auto *header = new QGridLayout;
     header->addWidget(m_title, 0, 0);
-    header->addWidget(m_deviceEnabled, 0, 1, Qt::AlignRight);
+    header->addLayout(profileRow, 0, 1, Qt::AlignRight);
     header->addWidget(m_details, 1, 0, 1, 2);
     header->addWidget(m_state, 2, 0, 1, 2);
 
@@ -175,29 +199,24 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, QWidget *parent)
     toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     toolbar->addAction(m_toggleAction);
     toolbar->addAction(rescanAction);
-    toolbar->addSeparator();
-    toolbar->addWidget(new QLabel(tr(" Profile: ")));
-    m_profileCombo = new QComboBox;
-    m_profileCombo->setMinimumContentsLength(14);
-    m_profileCombo->setToolTip(tr("Active profile. Its bindings are applied to every device."));
-    toolbar->addWidget(m_profileCombo);
-    connect(m_profileCombo, &QComboBox::activated, this, [this](int i) {
-        m_manager->switchProfile(m_profileCombo->itemText(i));
-    });
     auto *hotkeysAction = new QAction(QIcon::fromTheme(QStringLiteral("preferences-desktop-keyboard-shortcuts")),
                                       tr("Hotkeys…"), this);
     connect(hotkeysAction, &QAction::triggered, this, &MainWindow::showHotkeys);
-    m_profileMenu = new QMenu(tr("&Profiles"), this);
-    auto *profilesButton = new QToolButton;
-    profilesButton->setText(tr("Profiles"));
-    profilesButton->setMenu(m_profileMenu);
-    profilesButton->setPopupMode(QToolButton::InstantPopup);
-    toolbar->addWidget(profilesButton);
+    auto *settingsAction = new QAction(QIcon::fromTheme(QStringLiteral("configure")), tr("Settings…"), this);
+    settingsAction->setShortcut(QKeySequence::Preferences);
+    connect(settingsAction, &QAction::triggered, this, [this] {
+        SettingsDialog dlg(m_config, m_battery, this);
+        dlg.exec();
+    });
+    toolbar->addSeparator();
     toolbar->addAction(hotkeysAction);
+    toolbar->addAction(settingsAction);
+    m_profileMenu = new QMenu(tr("&Profiles"), this);
 
     auto *fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->addAction(m_toggleAction);
     fileMenu->addAction(rescanAction);
+    fileMenu->addAction(settingsAction);
     fileMenu->addSeparator();
     fileMenu->addAction(quitAction);
     menuBar()->addMenu(m_profileMenu);
@@ -248,6 +267,11 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, QWidget *parent)
         selectDevice();
     });
     connect(m_manager, &RemapManager::showRequested, this, &MainWindow::showFromBackground);
+    connect(m_battery, &BatteryMonitor::levelsChanged, this, [this] {
+        refreshState();
+        refreshDetails();
+        refreshProfiles(); // tray tooltip
+    });
     connect(m_manager, &RemapManager::message, this, [this](const QString &msg) {
         statusBar()->showMessage(msg, 8000);
     });
@@ -404,15 +428,10 @@ void MainWindow::selectDevice()
             parts << tr("serial %1").arg(serial);
         if (!firmware.isEmpty())
             parts << tr("firmware %1").arg(firmware);
-        if (dev->kind == RazerDevice::Mouse) {
-            const QString charge = dev->attribute("charge_level");
-            if (!charge.isEmpty())
-                parts << tr("battery %1%").arg(qRound(charge.toInt() * 100.0 / 255.0));
-        }
         parts << dev->eventNodes.join(QStringLiteral(", "));
         m_detailsCache.insert(dev->hidPath, parts.join(QStringLiteral("  ·  ")));
     }
-    m_details->setText(m_detailsCache.value(dev->hidPath));
+    refreshDetails();
     m_views->setCurrentIndex(dev->kind == RazerDevice::Mouse ? 2 : 1);
     {
         QSignalBlocker b(m_deviceEnabled);
@@ -421,6 +440,27 @@ void MainWindow::selectDevice()
     }
     refreshBindings();
     refreshState();
+    refreshProfiles();
+}
+
+QString MainWindow::batteryText(const QString &hidPath) const
+{
+    const BatteryMonitor::Level l = m_battery->level(hidPath);
+    if (l.percent < 0)
+        return {};
+    return l.charging ? tr("battery %1% (charging)").arg(l.percent) : tr("battery %1%").arg(l.percent);
+}
+
+void MainWindow::refreshDetails()
+{
+    const RazerDevice *dev = current();
+    if (!dev)
+        return;
+    QString text = m_detailsCache.value(dev->hidPath);
+    const QString battery = batteryText(dev->hidPath);
+    if (!battery.isEmpty())
+        text = battery + QStringLiteral("  ·  ") + text;
+    m_details->setText(text);
 }
 
 void MainWindow::refreshState()
@@ -448,6 +488,10 @@ void MainWindow::refreshState()
             status = tr("● remapping");
         else
             status = tr("○ idle");
+        status += QStringLiteral(" · ") + m_config->activeProfile(dev->profileKey);
+        const BatteryMonitor::Level battery = m_battery->level(path);
+        if (battery.percent >= 0)
+            status += QStringLiteral(" · %1%%2").arg(battery.percent).arg(battery.charging ? QStringLiteral("⚡") : QString());
         item->setText(dev->name + QLatin1Char('\n') + status);
     }
 
@@ -617,100 +661,130 @@ void MainWindow::showFromBackground()
 
 void MainWindow::refreshProfiles()
 {
-    const QString active = m_config->activeProfile();
+    const RazerDevice *dev = current();
+    const QString key = dev ? dev->profileKey : QString();
     {
         QSignalBlocker b(m_profileCombo);
         m_profileCombo->clear();
-        m_profileCombo->addItems(m_config->profileNames());
-        m_profileCombo->setCurrentText(active);
+        m_profileCombo->addItems(m_config->profileNames(key));
+        m_profileCombo->setCurrentText(m_config->activeProfile(key));
+        m_profileCombo->setEnabled(dev != nullptr);
     }
     fillProfileMenu(m_profileMenu);
     if (m_trayProfileMenu)
         fillProfileMenu(m_trayProfileMenu);
-    m_profileStatus->setText(tr("Profile: <b>%1</b>").arg(active.toHtmlEscaped()));
-    if (m_tray)
-        m_tray->setToolTip(tr("Razer Rebind — %1").arg(active));
-    setWindowTitle(tr("Razer Rebind — %1").arg(active));
+
+    m_deviceProfileMenu->clear();
+    m_deviceProfileMenu->addAction(tr("New profile…"), this, [this] { newProfile(false); });
+    m_deviceProfileMenu->addAction(tr("Duplicate this profile…"), this, [this] { newProfile(true); });
+    m_deviceProfileMenu->addAction(tr("Rename this profile…"), this, &MainWindow::renameProfile);
+    QAction *del = m_deviceProfileMenu->addAction(tr("Delete this profile…"), this, &MainWindow::deleteProfile);
+    del->setEnabled(m_config->profileNames(key).size() > 1);
+    m_deviceProfileMenu->setEnabled(dev != nullptr);
+
+    const QString summary = m_manager->profileSummary();
+    m_profileStatus->setText(summary);
+    if (m_tray) {
+        QString tip = tr("Razer Rebind") + QLatin1Char('\n') + summary;
+        const QString battery = m_battery->summary();
+        if (!battery.isEmpty())
+            tip += QLatin1Char('\n') + tr("Battery: %1").arg(battery);
+        m_tray->setToolTip(tip);
+    }
 }
 
 void MainWindow::fillProfileMenu(QMenu *menu)
 {
+    // One section per device, then "All devices" for names several devices share.
     menu->clear();
-    auto *group = new QActionGroup(menu);
-    for (const QString &name : m_config->profileNames()) {
-        // Show the hotkey that switches here, if any, like a menu shortcut.
-        QString text = name;
+    auto hotkeyFor = [this](const QString &device, const QString &name) {
         for (const Hotkey &h : std::as_const(m_config->hotkeys))
-            if (h.action == Hotkey::SwitchProfile && h.profile == name) {
-                text += QLatin1Char('\t') + h.triggerLabel();
-                break;
-            }
-        QAction *a = menu->addAction(text, this, [this, name] { m_manager->switchProfile(name); });
-        a->setCheckable(true);
-        a->setChecked(name == m_config->activeProfile());
-        group->addAction(a);
+            if (h.action == Hotkey::SwitchProfile && h.profile == name && h.device == device)
+                return QLatin1Char('\t') + h.triggerLabel();
+        return QString();
+    };
+    const QStringList devices = m_config->deviceKeys();
+    for (const QString &device : devices) {
+        menu->addSection(shortDeviceName(device));
+        auto *group = new QActionGroup(menu);
+        for (const QString &name : m_config->profileNames(device)) {
+            QAction *a = menu->addAction(name + hotkeyFor(device, name), this,
+                                         [this, device, name] { m_manager->switchProfile(device, name); });
+            a->setCheckable(true);
+            a->setChecked(name == m_config->activeProfile(device));
+            group->addAction(a);
+        }
+    }
+    if (devices.size() > 1) {
+        menu->addSection(tr("All devices"));
+        for (const QString &name : m_config->allProfileNames())
+            menu->addAction(name + hotkeyFor(QString(), name), this, [this, name] {
+                m_manager->perform(Hotkey::SwitchProfile, name, QString(), false);
+            });
     }
     if (menu == m_trayProfileMenu)
         return;
-    menu->addSeparator();
-    menu->addAction(tr("New profile…"), this, [this] { newProfile(false); });
-    menu->addAction(tr("Duplicate current profile…"), this, [this] { newProfile(true); });
-    menu->addAction(tr("Rename current profile…"), this, &MainWindow::renameProfile);
-    QAction *del = menu->addAction(tr("Delete current profile…"), this, &MainWindow::deleteProfile);
-    del->setEnabled(m_config->profileNames().size() > 1);
     menu->addSeparator();
     menu->addAction(tr("Hotkeys…"), this, &MainWindow::showHotkeys);
 }
 
 void MainWindow::newProfile(bool duplicate)
 {
-    const QString current = m_config->activeProfile();
+    const RazerDevice *dev = current();
+    if (!dev)
+        return;
+    const QString device = dev->profileKey;
+    const QString active = m_config->activeProfile(device);
     bool ok = false;
     const QString name = QInputDialog::getText(this, duplicate ? tr("Duplicate profile") : tr("New profile"),
-                                               tr("Profile name:"), QLineEdit::Normal,
-                                               duplicate ? tr("%1 copy").arg(current) : QString(), &ok)
+                                               tr("Name of the new %1 profile:").arg(shortDeviceName(device)),
+                                               QLineEdit::Normal, duplicate ? tr("%1 copy").arg(active) : QString(), &ok)
                              .trimmed();
     if (!ok || name.isEmpty())
         return;
-    if (!m_config->addProfile(name, duplicate ? current : QString())) {
-        QMessageBox::warning(this, tr("New profile"), tr("A profile named “%1” already exists.").arg(name));
+    if (!m_config->addProfile(device, name, duplicate ? active : QString())) {
+        QMessageBox::warning(this, tr("New profile"), tr("The %1 already has a profile named “%2”.").arg(device, name));
         return;
     }
-    m_manager->switchProfile(name); // saves
+    m_manager->switchProfile(device, name); // saves
 }
 
 void MainWindow::renameProfile()
 {
-    const QString current = m_config->activeProfile();
+    const RazerDevice *dev = current();
+    if (!dev)
+        return;
+    const QString device = dev->profileKey;
+    const QString active = m_config->activeProfile(device);
     bool ok = false;
     const QString name = QInputDialog::getText(this, tr("Rename profile"), tr("Profile name:"),
-                                               QLineEdit::Normal, current, &ok)
+                                               QLineEdit::Normal, active, &ok)
                              .trimmed();
-    if (!ok || name.isEmpty() || name == current)
+    if (!ok || name.isEmpty() || name == active)
         return;
-    if (!m_config->renameProfile(current, name)) {
-        QMessageBox::warning(this, tr("Rename profile"), tr("A profile named “%1” already exists.").arg(name));
+    if (!m_config->renameProfile(device, active, name)) {
+        QMessageBox::warning(this, tr("Rename profile"), tr("The %1 already has a profile named “%2”.").arg(device, name));
         return;
     }
-    m_manager->switchProfile(name);
+    m_manager->switchProfile(device, name);
 }
 
 void MainWindow::deleteProfile()
 {
-    const QString current = m_config->activeProfile();
-    if (m_config->profileNames().size() <= 1)
+    const RazerDevice *dev = current();
+    if (!dev)
         return;
-    int hotkeys = 0;
-    for (const Hotkey &h : std::as_const(m_config->hotkeys))
-        if (h.action == Hotkey::SwitchProfile && h.profile == current)
-            ++hotkeys;
-    QString text = tr("Delete the profile “%1” and all of its bindings?").arg(current);
-    if (hotkeys)
-        text += QLatin1Char(' ') + tr("Its %n hotkey(s) will be removed too.", nullptr, hotkeys);
-    if (QMessageBox::question(this, tr("Delete profile"), text) != QMessageBox::Yes)
+    const QString device = dev->profileKey;
+    const QString active = m_config->activeProfile(device);
+    if (m_config->profileNames(device).size() <= 1)
         return;
-    m_config->removeProfile(current);
-    m_manager->switchProfile(m_config->activeProfile());
+    if (QMessageBox::question(this, tr("Delete profile"),
+                              tr("Delete the %1 profile “%2” and all of its bindings? Hotkeys that switch "
+                                 "to it are removed too.").arg(shortDeviceName(device), active))
+        != QMessageBox::Yes)
+        return;
+    m_config->removeProfile(device, active);
+    m_manager->switchProfile(device, m_config->activeProfile(device));
 }
 
 void MainWindow::showHotkeys()

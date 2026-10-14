@@ -17,6 +17,8 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
+#include <algorithm>
+
 #include <linux/input-event-codes.h>
 
 namespace {
@@ -36,6 +38,7 @@ QList<int> triggerCodes()
 
 HotkeyEditDialog::HotkeyEditDialog(RemapManager *manager, const Config *config, QWidget *parent)
     : QDialog(parent)
+    , m_config(config)
 {
     setWindowTitle(tr("Edit hotkey"));
 
@@ -69,12 +72,21 @@ HotkeyEditDialog::HotkeyEditDialog(RemapManager *manager, const Config *config, 
     m_action->addItem(tr("Next profile"), Hotkey::NextProfile);
     m_action->addItem(tr("Previous profile"), Hotkey::PreviousProfile);
     m_action->addItem(tr("Turn remapping on/off"), Hotkey::ToggleRemapping);
+    m_device = new QComboBox;
+    m_device->addItem(tr("All devices"), QString());
+    for (const QString &d : config->deviceKeys())
+        m_device->addItem(d, d);
     m_profile = new QComboBox;
-    m_profile->addItems(config->profileNames());
-    m_profile->setCurrentText(config->activeProfile());
+    m_profile->setEditable(false);
     auto *actionLayout = new QFormLayout;
     actionLayout->addRow(tr("Action:"), m_action);
+    actionLayout->addRow(tr("Device:"), m_device);
     actionLayout->addRow(tr("Profile:"), m_profile);
+    auto *scopeNote = new QLabel(tr("With “All devices”, every device that has a profile of that name switches "
+                                    "to it; next/previous moves each device through its own profiles."));
+    scopeNote->setWordWrap(true);
+    scopeNote->setStyleSheet(QStringLiteral("color: palette(placeholder-text);"));
+    actionLayout->addRow(scopeNote);
     auto *actionBox = new QGroupBox(tr("Does"));
     actionBox->setLayout(actionLayout);
 
@@ -107,7 +119,12 @@ HotkeyEditDialog::HotkeyEditDialog(RemapManager *manager, const Config *config, 
         connect(cb, &QCheckBox::toggled, this, &HotkeyEditDialog::updateState);
     connect(m_key, &KeyPicker::codeChanged, this, &HotkeyEditDialog::updateState);
     connect(m_action, &QComboBox::currentIndexChanged, this, &HotkeyEditDialog::updateState);
+    connect(m_device, &QComboBox::currentIndexChanged, this, [this] {
+        fillProfiles();
+        updateState();
+    });
     connect(m_profile, &QComboBox::currentIndexChanged, this, &HotkeyEditDialog::updateState);
+    fillProfiles();
 
     m_ctrl->setChecked(true);
     m_alt->setChecked(true);
@@ -123,9 +140,21 @@ void HotkeyEditDialog::setHotkey(const Hotkey &h)
     m_super->setChecked(h.modifiers & Keys::ModSuper);
     m_key->setCode(h.code);
     m_action->setCurrentIndex(m_action->findData(h.action));
+    m_device->setCurrentIndex(std::max(0, m_device->findData(h.device)));
+    fillProfiles();
     if (h.action == Hotkey::SwitchProfile)
         m_profile->setCurrentText(h.profile);
     updateState();
+}
+
+void HotkeyEditDialog::fillProfiles()
+{
+    const QString device = m_device->currentData().toString();
+    const QString keep = m_profile->currentText();
+    QSignalBlocker block(m_profile);
+    m_profile->clear();
+    m_profile->addItems(device.isEmpty() ? m_config->allProfileNames() : m_config->profileNames(device));
+    m_profile->setCurrentText(keep);
 }
 
 Hotkey HotkeyEditDialog::hotkey() const
@@ -139,6 +168,8 @@ Hotkey HotkeyEditDialog::hotkey() const
     h.action = Hotkey::Action(m_action->currentData().toInt());
     if (h.action == Hotkey::SwitchProfile)
         h.profile = m_profile->currentText();
+    if (h.action != Hotkey::ToggleRemapping)
+        h.device = m_device->currentData().toString();
     return h;
 }
 
@@ -146,6 +177,7 @@ void HotkeyEditDialog::updateState()
 {
     const Hotkey h = hotkey();
     m_profile->setEnabled(h.action == Hotkey::SwitchProfile);
+    m_device->setEnabled(h.action != Hotkey::ToggleRemapping);
     m_preview->setText(QStringLiteral("<b>%1</b> &nbsp;→&nbsp; %2")
                            .arg(h.code > 0 ? h.triggerLabel().toHtmlEscaped() : tr("<i>choose a key</i>"),
                                 h.actionLabel().toHtmlEscaped()));
@@ -203,13 +235,6 @@ HotkeysDialog::HotkeysDialog(RemapManager *manager, Config *config, QWidget *par
     row->addWidget(m_table, 1);
     row->addLayout(buttonCol);
 
-    auto *notifications = new QCheckBox(tr("Show a desktop notification when a hotkey switches profile"));
-    notifications->setChecked(m_config->notifications);
-    connect(notifications, &QCheckBox::toggled, this, [this](bool on) {
-        m_config->notifications = on;
-        commit();
-    });
-
     auto *close = new QDialogButtonBox(QDialogButtonBox::Close);
     connect(close, &QDialogButtonBox::rejected, this, &QDialog::accept);
 
@@ -217,7 +242,6 @@ HotkeysDialog::HotkeysDialog(RemapManager *manager, Config *config, QWidget *par
     auto *layout = new QVBoxLayout(this);
     layout->addWidget(intro);
     layout->addLayout(row, 1);
-    layout->addWidget(notifications);
     layout->addWidget(close);
 
     connect(add, &QPushButton::clicked, this, [this] { edit(-1); });

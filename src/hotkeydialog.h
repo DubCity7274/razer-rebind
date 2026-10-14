@@ -27,6 +27,7 @@ public:
 
 private:
     void updateState();
+    void fillProfiles();
 
     QCheckBox *m_ctrl;
     QCheckBox *m_shift;
@@ -36,7 +37,9 @@ private:
     QPushButton *m_detect;
     InputDetector *m_detector;
     QComboBox *m_action;
+    QComboBox *m_device;
     QComboBox *m_profile;
+    const Config *m_config;
     QLabel *m_preview;
 };
 

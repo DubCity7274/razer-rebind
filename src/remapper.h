@@ -47,7 +47,7 @@ signals:
     // worker thread; connect with the default (queued) connection type.
     void inputEvent(int code, bool pressed);
     void stateChanged();
-    void hotkeyTriggered(int action, const QString &profile);
+    void hotkeyTriggered(int action, const QString &profile, const QString &device);
     void failed(const QString &message);
     void disconnected();
 

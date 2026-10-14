@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.19)
-project(razer-rebind VERSION 0.3.0 LANGUAGES CXX)
+project(razer-rebind VERSION 0.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,6 +18,9 @@ qt_add_executable(razer-rebind
     src/remapper.cpp src/remapper.h
     src/remapmanager.cpp src/remapmanager.h
     src/config.cpp src/config.h
+    src/notifications.cpp src/notifications.h
+    src/batterymonitor.cpp src/batterymonitor.h
+    src/settingsdialog.cpp src/settingsdialog.h
     src/inputdetector.cpp src/inputdetector.h
     src/hotkeydialog.cpp src/hotkeydialog.h
     src/deviceview.cpp src/deviceview.h

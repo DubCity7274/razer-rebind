@@ -24,6 +24,8 @@ struct RazerDevice
     // Read an OpenRazer sysfs attribute (device_serial, firmware_version, ...).
     // Some of these do a USB round trip, so call them on demand only.
     QString attribute(const char *attr) const;
+    // Wireless devices expose their charge through OpenRazer.
+    bool hasBattery() const;
 };
 
 QList<RazerDevice> discoverRazerDevices();

@@ -73,6 +73,10 @@ between devices, so Ctrl on the keyboard combines with a mouse button. A
 local socket lets `razer-rebind --profile ...` control the running
 instance. Desktop notifications go through `org.freedesktop.Notifications`.
 
+Battery levels come from OpenRazer's `charge_level` and `charge_status`
+attributes. Each read is a USB round trip to the wireless device, so they
+are polled once a minute on a background thread.
+
 ## Project layout
 
 | Path | Purpose |
@@ -80,7 +84,10 @@ instance. Desktop notifications go through `org.freedesktop.Notifications`.
 | `src/razerdevice.*` | Device discovery through the OpenRazer sysfs tree |
 | `src/remapper.*` | Per-device worker thread: grab, remap, hotkeys, uinput output, LED forwarding |
 | `src/remapmanager.*` | Owns the remappers, follows hotplug, applies the active profile, runs hotkey actions, command socket, notifications |
-| `src/config.*` | Profiles, hotkeys, JSON storage and migration |
+| `src/config.*` | Per-device profiles, hotkeys, settings; JSON storage and migration |
+| `src/batterymonitor.*` | Battery polling through OpenRazer and low battery alerts |
+| `src/notifications.*` | Desktop notifications over `org.freedesktop.Notifications` |
+| `src/settingsdialog.*` | Notification and battery settings |
 | `src/keys.*` | Key names and labels, and which codes are safe to emit |
 | `src/deviceview.*` | Clickable Huntsman Elite and Viper Ultimate pictures |
 | `src/bindingdialog.*` | Binding editor (search, detect, record shortcut) |

@@ -28,10 +28,15 @@ public:
 
     bool remappingEnabled() const;
     void setRemappingEnabled(bool enabled);
-    bool switchProfile(const QString &name);
+    bool switchProfile(const QString &device, const QString &name);
+    QString profileSummary() const; // "Huntsman Elite: Gaming · Viper Ultimate: Default"
 
-    // Run a hotkey action; `notify` shows a desktop notification about it.
-    QString perform(Hotkey::Action action, const QString &profile, bool notify);
+    // Run a hotkey action on one device, or all when `device` is empty;
+    // `notify` shows a desktop notification about it.
+    QString perform(Hotkey::Action action, const QString &profile, const QString &device, bool notify);
+
+    // Exact device key, or a unique case-insensitive part of one ("viper").
+    QString resolveDevice(const QString &query, QString *error) const;
 
     // Call after changing the config.
     void applyProfile();

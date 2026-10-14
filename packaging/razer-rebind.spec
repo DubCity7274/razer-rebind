@@ -1,5 +1,5 @@
 Name:           razer-rebind
-Version:        0.3.0
+Version:        0.4.0
 Release:        1%{?dist}
 Summary:        Key and button rebinding for Razer keyboards and mice (OpenRazer)
 
@@ -61,6 +61,12 @@ udevadm trigger --subsystem-match=input --subsystem-match=misc --action=change >
 %{_udevrulesdir}/70-%{name}.rules
 
 %changelog
+* Wed Oct 14 2026 dub <111620773+DubCity7274@users.noreply.github.com> - 0.4.0-1
+- Profiles per device: switch the keyboard and mouse independently, or all
+  devices with a shared profile name; hotkeys and --device target one device
+- Low battery notifications for wireless devices at a configurable level
+- Settings window; battery level shown in the device list and tray
+
 * Wed Oct 14 2026 dub <111620773+DubCity7274@users.noreply.github.com> - 0.3.0-1
 - Real-time priority for input threads: remapped input stays under 0.03 ms
   of added delay even with every CPU core busy

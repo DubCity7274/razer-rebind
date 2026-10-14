@@ -517,7 +517,7 @@ bool Remapper::matchHotkey(int code, bool trigger)
     for (const Hotkey &h : std::as_const(m_hotkeys)) {
         if (h.code == code && h.modifiers == mods) {
             if (trigger)
-                emit hotkeyTriggered(int(h.action), h.profile);
+                emit hotkeyTriggered(int(h.action), h.profile, h.device);
             return true;
         }
     }

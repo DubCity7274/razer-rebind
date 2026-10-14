@@ -1,13 +1,12 @@
 #include "remapmanager.h"
 
+#include "notifications.h"
 #include "remapper.h"
 
 #include <QDBusConnection>
-#include <QDBusMessage>
-#include <QDBusPendingCallWatcher>
-#include <QDBusPendingReply>
 #include <QLocalServer>
 #include <QLocalSocket>
+#include <QSet>
 
 #include <unistd.h>
 
@@ -53,9 +52,9 @@ void RemapManager::setRemappingEnabled(bool enabled)
     applyProfile();
 }
 
-bool RemapManager::switchProfile(const QString &name)
+bool RemapManager::switchProfile(const QString &device, const QString &name)
 {
-    if (!m_config->setActiveProfile(name))
+    if (!m_config->setActiveProfile(device, name))
         return false;
     m_config->save(nullptr);
     applyProfile();
@@ -63,39 +62,76 @@ bool RemapManager::switchProfile(const QString &name)
     return true;
 }
 
-QString RemapManager::perform(Hotkey::Action action, const QString &profile, bool notifyUser)
+QString RemapManager::profileSummary() const
 {
-    QString target;
-    switch (action) {
-    case Hotkey::SwitchProfile:
-        target = profile;
-        break;
-    case Hotkey::NextProfile:
-        target = m_config->adjacentProfile(1);
-        break;
-    case Hotkey::PreviousProfile:
-        target = m_config->adjacentProfile(-1);
-        break;
-    case Hotkey::ToggleRemapping: {
+    QStringList parts;
+    for (const QString &d : m_config->deviceKeys())
+        parts << QStringLiteral("%1: %2").arg(shortDeviceName(d), m_config->activeProfile(d));
+    return parts.join(QStringLiteral(" · "));
+}
+
+QString RemapManager::resolveDevice(const QString &query, QString *error) const
+{
+    const QStringList keys = m_config->deviceKeys();
+    if (query.isEmpty() || keys.contains(query))
+        return query;
+    QStringList matches;
+    for (const QString &k : keys)
+        if (k.contains(query, Qt::CaseInsensitive))
+            matches << k;
+    if (matches.size() == 1)
+        return matches.first();
+    *error = matches.isEmpty() ? tr("No device matches “%1”").arg(query)
+                               : tr("“%1” matches several devices: %2").arg(query, matches.join(QStringLiteral(", ")));
+    return {};
+}
+
+QString RemapManager::perform(Hotkey::Action action, const QString &profile, const QString &device,
+                              bool notifyUser)
+{
+    if (action == Hotkey::ToggleRemapping) {
         setRemappingEnabled(!remappingEnabled());
         const QString state = remappingEnabled() ? tr("Remapping on") : tr("Remapping off");
         if (notifyUser)
-            notify(state, remappingEnabled() ? tr("Profile: %1").arg(m_config->activeProfile())
-                                             : tr("Razer devices work normally"));
+            notify(state, remappingEnabled() ? profileSummary() : tr("Razer devices work normally"));
         return state;
     }
-    }
 
-    if (!switchProfile(target)) {
-        const QString err = tr("No profile named “%1”").arg(target);
+    // One device, or every device that has a matching profile.
+    const QStringList devices = device.isEmpty() ? m_config->deviceKeys() : QStringList{device};
+    QStringList changed;
+    QSet<QString> names;
+    for (const QString &d : devices) {
+        const QString name = action == Hotkey::SwitchProfile
+                                 ? profile
+                                 : m_config->adjacentProfile(d, action == Hotkey::NextProfile ? 1 : -1);
+        if (m_config->setActiveProfile(d, name)) {
+            changed << QStringLiteral("%1: %2").arg(shortDeviceName(d), name);
+            names.insert(name);
+        }
+    }
+    if (changed.isEmpty()) {
+        const QString err = device.isEmpty() ? tr("No device has a profile named “%1”").arg(profile)
+                                             : tr("%1 has no profile named “%2”").arg(shortDeviceName(device), profile);
         emit message(err);
         return err;
     }
-    if (notifyUser)
-        notify(tr("Profile: %1").arg(target),
-               remappingEnabled() ? QString() : tr("Remapping is turned off"));
-    emit message(tr("Switched to profile “%1”").arg(target));
-    return tr("Switched to profile “%1”").arg(target);
+    m_config->save(nullptr);
+    applyProfile();
+    emit profileChanged();
+
+    if (notifyUser) {
+        QString summary = changed.size() == 1 ? changed.first()
+                          : names.size() == 1 ? tr("Profile: %1").arg(*names.cbegin())
+                                              : tr("Profiles switched");
+        QString body = changed.size() == 1 ? QString() : changed.join(QLatin1Char('\n'));
+        if (!remappingEnabled())
+            body += (body.isEmpty() ? QString() : QStringLiteral("\n")) + tr("Remapping is turned off");
+        notify(summary, body);
+    }
+    const QString text = tr("Switched %1").arg(changed.join(QStringLiteral(", ")));
+    emit message(text);
+    return text;
 }
 
 void RemapManager::rescan()
@@ -118,9 +154,14 @@ void RemapManager::rescan()
     }
 
     m_errors.clear();
-    for (const RazerDevice &d : found)
+    bool newDevice = false;
+    for (const RazerDevice &d : found) {
+        newDevice |= m_config->ensureDevice(d.profileKey);
         if (!m_remappers.contains(d.hidPath))
             addRemapper(d);
+    }
+    if (newDevice)
+        m_config->save(nullptr);
 
     m_devices = found;
     applyProfile();
@@ -147,8 +188,8 @@ void RemapManager::addRemapper(const RazerDevice &dev)
         emit inputEvent(key, code, pressed);
     });
     connect(r, &Remapper::stateChanged, this, &RemapManager::stateChanged);
-    connect(r, &Remapper::hotkeyTriggered, this, [this](int action, const QString &profile) {
-        perform(Hotkey::Action(action), profile, m_config->notifications);
+    connect(r, &Remapper::hotkeyTriggered, this, [this](int action, const QString &profile, const QString &device) {
+        perform(Hotkey::Action(action), profile, device, m_config->notifications);
     });
     connect(r, &Remapper::failed, this, [this, hidPath](const QString &msg) {
         m_errors.insert(hidPath, msg);
@@ -208,26 +249,39 @@ bool RemapManager::listen()
 
 void RemapManager::handleCommand(const QString &command, QString *reply)
 {
-    const QString verb = command.section(QLatin1Char(' '), 0, 0);
-    const QString arg = command.section(QLatin1Char(' '), 1);
+    // verb TAB device TAB argument; device may be empty for "all devices".
+    const QStringList fields = command.split(QLatin1Char('\t'));
+    const QString verb = fields.value(0);
+    QString error;
+    const QString device = resolveDevice(fields.value(1), &error);
+    if (!error.isEmpty()) {
+        *reply = error;
+        return;
+    }
+    const QString arg = fields.value(2);
     if (verb == QLatin1String("show")) {
         emit showRequested();
         *reply = QStringLiteral("ok");
     } else if (verb == QLatin1String("profile")) {
-        *reply = perform(Hotkey::SwitchProfile, arg, m_config->notifications);
+        *reply = perform(Hotkey::SwitchProfile, arg, device, m_config->notifications);
     } else if (verb == QLatin1String("next")) {
-        *reply = perform(Hotkey::NextProfile, {}, m_config->notifications);
+        *reply = perform(Hotkey::NextProfile, {}, device, m_config->notifications);
     } else if (verb == QLatin1String("previous")) {
-        *reply = perform(Hotkey::PreviousProfile, {}, m_config->notifications);
+        *reply = perform(Hotkey::PreviousProfile, {}, device, m_config->notifications);
     } else if (verb == QLatin1String("toggle")) {
-        *reply = perform(Hotkey::ToggleRemapping, {}, m_config->notifications);
+        *reply = perform(Hotkey::ToggleRemapping, {}, {}, m_config->notifications);
     } else if (verb == QLatin1String("list")) {
         QStringList lines;
-        for (const QString &name : m_config->profileNames())
-            lines << (name == m_config->activeProfile() ? QStringLiteral("* ") : QStringLiteral("  ")) + name;
+        for (const QString &d : m_config->deviceKeys()) {
+            if (!device.isEmpty() && d != device)
+                continue;
+            lines << d;
+            for (const QString &name : m_config->profileNames(d))
+                lines << (name == m_config->activeProfile(d) ? QStringLiteral("  * ") : QStringLiteral("    ")) + name;
+        }
         *reply = lines.join(QLatin1Char('\n'));
     } else {
-        *reply = tr("unknown command: %1").arg(command);
+        *reply = tr("unknown command: %1").arg(verb);
     }
 }
 
@@ -241,24 +295,14 @@ void RemapManager::onNotificationClosed(uint id, uint)
 
 void RemapManager::notify(const QString &summary, const QString &body)
 {
-    // freedesktop notification. While our previous popup is still on screen,
-    // replace it so rapid switching doesn't pile up popups. Once it has gone,
-    // always start a new one: KDE Plasma applies a replacement of an expired
-    // notification silently to its history, so nothing would pop up.
+    // While our previous popup is still on screen, replace it so rapid
+    // switching doesn't pile up popups. Once it has gone, always start a new
+    // one: KDE Plasma applies a replacement of an expired notification
+    // silently to its history, so nothing would pop up.
     constexpr int timeoutMs = 2500;
     if (!m_notificationShown.isValid() || m_notificationShown.elapsed() > timeoutMs)
         m_notificationId = 0;
     m_notificationShown.start();
-    QDBusMessage msg = QDBusMessage::createMethodCall(
-        QStringLiteral("org.freedesktop.Notifications"), QStringLiteral("/org/freedesktop/Notifications"),
-        QStringLiteral("org.freedesktop.Notifications"), QStringLiteral("Notify"));
-    msg << QStringLiteral("Razer Rebind") << m_notificationId << QStringLiteral("input-keyboard") << summary << body
-        << QStringList() << QVariantMap{{QStringLiteral("transient"), true}} << timeoutMs;
-    auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(msg), this);
-    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *w) {
-        QDBusPendingReply<uint> reply = *w;
-        if (reply.isValid())
-            m_notificationId = reply.value();
-        w->deleteLater();
-    });
+    Notifications::send(this, summary, body, QStringLiteral("input-keyboard"), true, Notifications::Urgency::Normal,
+                        m_notificationId, timeoutMs, [this](uint id) { m_notificationId = id; });
 }

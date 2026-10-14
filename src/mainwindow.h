@@ -16,6 +16,7 @@ class QStackedWidget;
 class QSystemTrayIcon;
 class QTableWidget;
 class DeviceView;
+class BatteryMonitor;
 class Config;
 class RemapManager;
 
@@ -24,7 +25,7 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    MainWindow(Config *config, RemapManager *manager, QWidget *parent = nullptr);
+    MainWindow(Config *config, RemapManager *manager, BatteryMonitor *battery, QWidget *parent = nullptr);
 
     bool hasTray() const;
 
@@ -35,6 +36,8 @@ private:
     void rebuildDeviceList();
     void selectDevice();
     void refreshState();
+    void refreshDetails();
+    QString batteryText(const QString &hidPath) const;
     void refreshBindings();
     void editBinding(int sourceCode);
     void removeSelectedBinding();
@@ -56,6 +59,7 @@ private:
 
     Config *m_config;
     RemapManager *m_manager;
+    BatteryMonitor *m_battery;
     QString m_currentPath; // hidPath of the selected device
 
     QListWidget *m_devices;
@@ -74,6 +78,7 @@ private:
     QComboBox *m_profileCombo;
     QMenu *m_profileMenu;
     QMenu *m_trayProfileMenu = nullptr;
+    QMenu *m_deviceProfileMenu;
     QLabel *m_profileStatus;
     QSystemTrayIcon *m_tray = nullptr;
     bool m_trayHintShown = false;

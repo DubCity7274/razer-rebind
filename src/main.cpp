@@ -1,3 +1,4 @@
+#include "batterymonitor.h"
 #include "config.h"
 #include "mainwindow.h"
 #include "remapmanager.h"
@@ -67,7 +68,7 @@ int main(int argc, char *argv[])
     bool gui = true;
     for (int i = 1; i < argc; ++i) {
         const QByteArray arg = argv[i];
-        if (arg == "--headless" || arg == "--profile" || arg.startsWith("--profile=") || arg == "--next-profile"
+        if (arg == "--headless" || arg == "--profile" || arg.startsWith("--profile=") || arg == "--next-profile" || arg == "--device" || arg.startsWith("--device=") || arg == "-d" || arg == "-p"
             || arg == "--previous-profile" || arg == "--toggle" || arg == "--list-profiles" || arg == "-h"
             || arg == "--help" || arg == "-v" || arg == "--version")
             gui = false;
@@ -87,8 +88,14 @@ int main(int argc, char *argv[])
     parser.addOption({QStringLiteral("minimized"), QStringLiteral("Start hidden in the system tray.")});
     parser.addOption({{QStringLiteral("c"), QStringLiteral("config")}, QStringLiteral("Bindings file to use."),
                       QStringLiteral("file"), Config::defaultPath()});
-    parser.addOption({{QStringLiteral("p"), QStringLiteral("profile")}, QStringLiteral("Switch the running instance to <name>."),
+    parser.addOption({{QStringLiteral("p"), QStringLiteral("profile")},
+                      QStringLiteral("Switch the running instance to profile <name> (on every device that has it, "
+                                     "or only on --device)."),
                       QStringLiteral("name")});
+    parser.addOption({{QStringLiteral("d"), QStringLiteral("device")},
+                      QStringLiteral("Limit --profile, --next-profile, --previous-profile and --list-profiles to one "
+                                     "device. Any unique part of its name works, e.g. \"viper\"."),
+                      QStringLiteral("device")});
     parser.addOption({QStringLiteral("next-profile"), QStringLiteral("Switch the running instance to the next profile.")});
     parser.addOption({QStringLiteral("previous-profile"), QStringLiteral("Switch the running instance to the previous profile.")});
     parser.addOption({QStringLiteral("toggle"), QStringLiteral("Turn remapping on or off in the running instance.")});
@@ -99,25 +106,35 @@ int main(int argc, char *argv[])
     QTextStream err(stderr);
 
     // Remote control of the running instance.
-    QString command;
-    if (parser.isSet(QStringLiteral("profile")))
-        command = QStringLiteral("profile ") + parser.value(QStringLiteral("profile"));
-    else if (parser.isSet(QStringLiteral("next-profile")))
-        command = QStringLiteral("next");
-    else if (parser.isSet(QStringLiteral("previous-profile")))
-        command = QStringLiteral("previous");
-    else if (parser.isSet(QStringLiteral("toggle")))
-        command = QStringLiteral("toggle");
-    else if (parser.isSet(QStringLiteral("list-profiles")))
-        command = QStringLiteral("list");
-    if (!command.isEmpty()) {
+    // Protocol: verb TAB device TAB argument (device empty = all devices).
+    QString verb, argument;
+    if (parser.isSet(QStringLiteral("profile"))) {
+        verb = QStringLiteral("profile");
+        argument = parser.value(QStringLiteral("profile"));
+    } else if (parser.isSet(QStringLiteral("next-profile"))) {
+        verb = QStringLiteral("next");
+    } else if (parser.isSet(QStringLiteral("previous-profile"))) {
+        verb = QStringLiteral("previous");
+    } else if (parser.isSet(QStringLiteral("toggle"))) {
+        verb = QStringLiteral("toggle");
+    } else if (parser.isSet(QStringLiteral("list-profiles"))) {
+        verb = QStringLiteral("list");
+    }
+    if (verb.isEmpty() && parser.isSet(QStringLiteral("device"))) {
+        err << "--device needs one of --profile, --next-profile, --previous-profile or --list-profiles." << Qt::endl;
+        return 2;
+    }
+    if (!verb.isEmpty()) {
+        const QString command = verb + QLatin1Char('\t') + parser.value(QStringLiteral("device")) + QLatin1Char('\t') + argument;
         QString reply;
         if (!sendCommand(command, &reply)) {
             err << "Razer Rebind is not running." << Qt::endl;
             return 1;
         }
         out << reply << Qt::endl;
-        return reply.startsWith(QLatin1String("No profile")) || reply.startsWith(QLatin1String("unknown")) ? 1 : 0;
+        const bool failed = reply.startsWith(QLatin1String("No ")) || reply.contains(QLatin1String(" has no profile"))
+                            || reply.contains(QLatin1String("matches several")) || reply.startsWith(QLatin1String("unknown"));
+        return failed ? 1 : 0;
     }
 
     // Two instances would fight over the exclusive device grabs. A second GUI
@@ -127,7 +144,7 @@ int main(int argc, char *argv[])
     lock.setStaleLockTime(0);
     if (!lock.tryLock()) {
         QString reply;
-        if (gui && sendCommand(QStringLiteral("show"), &reply))
+        if (gui && sendCommand(QStringLiteral("show\t\t"), &reply))
             return 0;
         const QString msg = QStringLiteral("Razer Rebind is already running.");
         if (gui)
@@ -147,20 +164,21 @@ int main(int argc, char *argv[])
     RemapManager manager(&config);
     QObject::connect(&manager, &RemapManager::message, [&err](const QString &msg) { err << msg << Qt::endl; });
     manager.listen();
+    BatteryMonitor battery(&manager, &config);
 
     if (!gui) {
         QObject::connect(&manager, &RemapManager::devicesChanged, [&manager, &err] {
             for (const RazerDevice &d : manager.devices())
                 err << "found " << d.name << " (" << d.eventNodes.join(QStringLiteral(", ")) << ")" << Qt::endl;
         });
-        err << "profile: " << config.activeProfile() << Qt::endl;
         manager.rescan();
+        err << "profiles: " << manager.profileSummary() << Qt::endl;
         return app->exec();
     }
 
     static_cast<QApplication *>(app.get())->setQuitOnLastWindowClosed(false);
     manager.rescan();
-    MainWindow window(&config, &manager);
+    MainWindow window(&config, &manager, &battery);
     if (!(parser.isSet(QStringLiteral("minimized")) && window.hasTray()))
         window.show();
     return app->exec();
