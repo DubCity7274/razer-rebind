@@ -21,6 +21,15 @@ drivers, runs on X11 and Wayland, and needs no root once installed.
 - **Stays out of the way:** runs in the system tray or as a background
   service. Devices with nothing to remap aren't touched at all.
 
+> **About this project:** Razer Rebind is a personal project I built for my
+> own keyboard and mouse. Anyone is free to use, modify and share it under
+> the [GPL-2.0-or-later](LICENSE) license, but support and new features are
+> best-effort.
+>
+> **AI disclosure:** this project was developed with the help of an AI
+> assistant (Claude, by Anthropic), which wrote much of the code and
+> documentation under my direction. I tested it on my own hardware.
+
 ## Supported devices
 
 Razer Rebind was developed with the **Razer Huntsman Elite** keyboard and the
