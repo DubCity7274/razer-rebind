@@ -26,6 +26,12 @@ RemapManager::RemapManager(Config *config, QObject *parent)
         m_retries = 0;
         m_rescanTimer.start();
     });
+
+    QDBusConnection::sessionBus().connect(QStringLiteral("org.freedesktop.Notifications"),
+                                          QStringLiteral("/org/freedesktop/Notifications"),
+                                          QStringLiteral("org.freedesktop.Notifications"),
+                                          QStringLiteral("NotificationClosed"), this,
+                                          SLOT(onNotificationClosed(uint,uint)));
 }
 
 RemapManager::~RemapManager()
@@ -227,15 +233,27 @@ void RemapManager::handleCommand(const QString &command, QString *reply)
 
 // --- notifications -------------------------------------------------------
 
+void RemapManager::onNotificationClosed(uint id, uint)
+{
+    if (id == m_notificationId)
+        m_notificationId = 0;
+}
+
 void RemapManager::notify(const QString &summary, const QString &body)
 {
-    // freedesktop notification; replaces the previous one so rapid switching
-    // doesn't pile up a stack of popups.
+    // freedesktop notification. While our previous popup is still on screen,
+    // replace it so rapid switching doesn't pile up popups. Once it has gone,
+    // always start a new one: KDE Plasma applies a replacement of an expired
+    // notification silently to its history, so nothing would pop up.
+    constexpr int timeoutMs = 2500;
+    if (!m_notificationShown.isValid() || m_notificationShown.elapsed() > timeoutMs)
+        m_notificationId = 0;
+    m_notificationShown.start();
     QDBusMessage msg = QDBusMessage::createMethodCall(
         QStringLiteral("org.freedesktop.Notifications"), QStringLiteral("/org/freedesktop/Notifications"),
         QStringLiteral("org.freedesktop.Notifications"), QStringLiteral("Notify"));
     msg << QStringLiteral("Razer Rebind") << m_notificationId << QStringLiteral("input-keyboard") << summary << body
-        << QStringList() << QVariantMap{{QStringLiteral("transient"), true}} << 2500;
+        << QStringList() << QVariantMap{{QStringLiteral("transient"), true}} << timeoutMs;
     auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(msg), this);
     connect(watcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *w) {
         QDBusPendingReply<uint> reply = *w;

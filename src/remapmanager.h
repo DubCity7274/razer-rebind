@@ -6,6 +6,7 @@
 #include <QFileSystemWatcher>
 #include <QHash>
 #include <QObject>
+#include <QElapsedTimer>
 #include <QTimer>
 
 class QLocalServer;
@@ -50,6 +51,9 @@ signals:
     void inputEvent(const QString &profileKey, int code, bool pressed);
     void message(const QString &text);
 
+private slots:
+    void onNotificationClosed(uint id, uint reason);
+
 private:
     void addRemapper(const RazerDevice &dev);
     void handleCommand(const QString &command, QString *reply);
@@ -63,5 +67,6 @@ private:
     QTimer m_rescanTimer;
     int m_retries = 0;
     QLocalServer *m_server = nullptr;
-    uint m_notificationId = 0;
+    uint m_notificationId = 0;     // popup currently on screen, 0 if none
+    QElapsedTimer m_notificationShown;
 };
