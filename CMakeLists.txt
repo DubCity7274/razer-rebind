@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.19)
-project(razer-rebind VERSION 0.1.0 LANGUAGES CXX)
+project(razer-rebind VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,10 +25,12 @@ qt_add_executable(razer-rebind
     src/mainwindow.cpp src/mainwindow.h
 )
 target_compile_options(razer-rebind PRIVATE -Wall -Wextra)
+target_compile_definitions(razer-rebind PRIVATE RAZER_REBIND_VERSION="${PROJECT_VERSION}")
 target_link_libraries(razer-rebind PRIVATE Qt6::Widgets Qt6::Network Qt6::DBus PkgConfig::LIBEVDEV Threads::Threads)
 
 include(GNUInstallDirs)
+configure_file(data/razer-rebind.service.in razer-rebind.service @ONLY)
 install(TARGETS razer-rebind RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES data/razer-rebind.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
-install(FILES data/razer-rebind.service DESTINATION lib/systemd/user)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/razer-rebind.service DESTINATION lib/systemd/user)
 install(FILES data/70-razer-rebind.rules DESTINATION lib/udev/rules.d)

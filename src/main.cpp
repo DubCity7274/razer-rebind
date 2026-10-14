@@ -75,7 +75,7 @@ int main(int argc, char *argv[])
 
     std::unique_ptr<QCoreApplication> app(gui ? new QApplication(argc, argv) : new QCoreApplication(argc, argv));
     QCoreApplication::setApplicationName(QStringLiteral("razer-rebind"));
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.2.0"));
+    QCoreApplication::setApplicationVersion(QStringLiteral(RAZER_REBIND_VERSION));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("Key and button rebinding for Razer devices using the OpenRazer drivers.\n\n"
