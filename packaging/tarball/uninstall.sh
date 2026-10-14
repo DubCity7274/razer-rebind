@@ -9,6 +9,7 @@ fi
 
 rm -f /usr/local/bin/razer-rebind \
     /usr/local/share/applications/razer-rebind.desktop \
+    /usr/local/share/icons/hicolor/scalable/apps/razer-rebind.svg \
     /usr/local/lib/systemd/user/razer-rebind.service \
     /etc/udev/rules.d/70-razer-rebind.rules
 udevadm control --reload-rules 2>/dev/null || true

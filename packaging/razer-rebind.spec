@@ -39,6 +39,7 @@ access to Razer input devices and /dev/uinput, which the remapper needs.
 
 %check
 desktop-file-validate %{buildroot}%{_datadir}/applications/%{name}.desktop
+%{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %post
 %udev_rules_update

@@ -11,6 +11,7 @@ cd "$(dirname "$0")"
 
 install -Dm755 razer-rebind /usr/local/bin/razer-rebind
 install -Dm644 razer-rebind.desktop /usr/local/share/applications/razer-rebind.desktop
+install -Dm644 razer-rebind.svg /usr/local/share/icons/hicolor/scalable/apps/razer-rebind.svg
 install -Dm644 razer-rebind.service /usr/local/lib/systemd/user/razer-rebind.service
 install -Dm644 70-razer-rebind.rules /etc/udev/rules.d/70-razer-rebind.rules
 

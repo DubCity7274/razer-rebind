@@ -28,6 +28,13 @@ qt_add_executable(razer-rebind
     src/mainwindow.cpp src/mainwindow.h
 )
 target_compile_options(razer-rebind PRIVATE -Wall -Wextra)
+
+# The udev rule is compiled in so `razer-rebind --print-udev-rule` can install
+# it on systems where no package did (AppImage, source builds).
+file(READ data/70-razer-rebind.rules RAZER_REBIND_UDEV_RULE)
+file(CONFIGURE OUTPUT generated/udevrule.h
+     CONTENT "#pragma once\nconstexpr const char *UdevRule = R\"rule(@RAZER_REBIND_UDEV_RULE@)rule\";\n" @ONLY)
+target_include_directories(razer-rebind PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_compile_definitions(razer-rebind PRIVATE RAZER_REBIND_VERSION="${PROJECT_VERSION}")
 target_link_libraries(razer-rebind PRIVATE Qt6::Widgets Qt6::Network Qt6::DBus PkgConfig::LIBEVDEV Threads::Threads)
 
@@ -35,6 +42,7 @@ include(GNUInstallDirs)
 configure_file(data/razer-rebind.service.in razer-rebind.service @ONLY)
 install(TARGETS razer-rebind RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES data/razer-rebind.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+install(FILES data/razer-rebind.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/razer-rebind.service DESTINATION lib/systemd/user)
 install(FILES data/70-razer-rebind.rules DESTINATION lib/udev/rules.d)
 

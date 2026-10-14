@@ -2,6 +2,7 @@
 #include "config.h"
 #include "mainwindow.h"
 #include "remapmanager.h"
+#include "udevrule.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
@@ -69,7 +70,7 @@ int main(int argc, char *argv[])
     for (int i = 1; i < argc; ++i) {
         const QByteArray arg = argv[i];
         if (arg == "--headless" || arg == "--profile" || arg.startsWith("--profile=") || arg == "--next-profile" || arg == "--device" || arg.startsWith("--device=") || arg == "-d" || arg == "-p"
-            || arg == "--previous-profile" || arg == "--toggle" || arg == "--list-profiles" || arg == "-h"
+            || arg == "--previous-profile" || arg == "--toggle" || arg == "--list-profiles" || arg == "--print-udev-rule" || arg == "-h"
             || arg == "--help" || arg == "-v" || arg == "--version")
             gui = false;
     }
@@ -100,10 +101,18 @@ int main(int argc, char *argv[])
     parser.addOption({QStringLiteral("previous-profile"), QStringLiteral("Switch the running instance to the previous profile.")});
     parser.addOption({QStringLiteral("toggle"), QStringLiteral("Turn remapping on or off in the running instance.")});
     parser.addOption({QStringLiteral("list-profiles"), QStringLiteral("List profiles; * marks the active one.")});
+    parser.addOption({QStringLiteral("print-udev-rule"),
+                      QStringLiteral("Print the device permission rule, for installing it by hand:\n"
+                                     "razer-rebind --print-udev-rule | sudo tee /etc/udev/rules.d/70-razer-rebind.rules")});
     parser.process(*app);
 
     QTextStream out(stdout);
     QTextStream err(stderr);
+
+    if (parser.isSet(QStringLiteral("print-udev-rule"))) {
+        out << UdevRule;
+        return 0;
+    }
 
     // Remote control of the running instance.
     // Protocol: verb TAB device TAB argument (device empty = all devices).

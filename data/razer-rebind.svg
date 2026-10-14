@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- Same design as the in-app icon (appIcon in mainwindow.cpp): a keycap
+       with a turning arrow, "this key does something else". -->
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="#44d62c"/>
+  <rect x="26" y="26" width="76" height="76" rx="13" fill="#141414"/>
+  <path d="M 79.6 55 A 21.8 21.8 0 1 1 64 42.2" fill="none" stroke="#44d62c" stroke-width="10" stroke-linecap="round"/>
+  <path d="M 66 30 L 82 42 L 64 52 Z" fill="#44d62c"/>
+</svg>

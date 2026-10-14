@@ -12,6 +12,7 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QComboBox>
 #include <QInputDialog>
 #include <QCloseEvent>
@@ -636,18 +637,31 @@ void MainWindow::saveProfile()
 
 void MainWindow::showPermissionHelp()
 {
+    // Inside an AppImage the binary lives in a temporary mount; $APPIMAGE is
+    // the file the user actually has.
+    QString exe = qEnvironmentVariable("APPIMAGE");
+    if (exe.isEmpty())
+        exe = QCoreApplication::applicationFilePath();
+    const QString command = QStringLiteral("'%1' --print-udev-rule | sudo tee /etc/udev/rules.d/70-razer-rebind.rules "
+                                           ">/dev/null && sudo udevadm control --reload && sudo udevadm trigger")
+                                .arg(exe);
+
     QMessageBox box(this);
     box.setWindowTitle(tr("Device permissions"));
     box.setTextFormat(Qt::RichText);
     box.setText(tr("<p>Razer Rebind needs to read the Razer event devices in <code>/dev/input</code> "
                    "and create a virtual device through <code>/dev/uinput</code>.</p>"
-                   "<p>Install the bundled udev rule, which grants this to the user logged in at the "
-                   "seat (not to other users or remote sessions):</p>"
-                   "<pre>sudo install -m644 data/70-razer-rebind.rules /etc/udev/rules.d/\n"
-                   "sudo udevadm control --reload\n"
-                   "sudo udevadm trigger</pre>"
-                   "<p>Then press <b>Rescan devices</b> (F5).</p>"));
+                   "<p>The RPM and .deb packages and the tarball's installer set this up. Otherwise "
+                   "(AppImage, source build), install the permission rule by running this once in a "
+                   "terminal. It grants access to the user logged in at this computer only:</p>"
+                   "<pre>%1</pre>"
+                   "<p>Then press <b>Rescan devices</b> (F5).</p>")
+                    .arg(command.toHtmlEscaped()));
+    QPushButton *copy = box.addButton(tr("Copy command"), QMessageBox::ActionRole);
+    box.addButton(QMessageBox::Close);
     box.exec();
+    if (box.clickedButton() == copy)
+        QGuiApplication::clipboard()->setText(command);
 }
 
 // --- profiles -------------------------------------------------------------

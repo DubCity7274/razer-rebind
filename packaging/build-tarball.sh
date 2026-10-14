@@ -23,7 +23,7 @@ build_direct() {
     mkdir -p "$stage"
     install -m755 -s "$work/build/razer-rebind" "$stage/"
     install -m644 "$work/build/razer-rebind.service" "$work/data/razer-rebind.desktop" \
-        "$work/data/70-razer-rebind.rules" "$work/README.md" "$work/LICENSE" "$stage/"
+        "$work/data/70-razer-rebind.rules" "$work/data/razer-rebind.svg" "$work/README.md" "$work/LICENSE" "$stage/"
     install -m755 "$work/packaging/tarball/install.sh" "$work/packaging/tarball/uninstall.sh" "$stage/"
     mkdir -p dist
     tar -C "$work" -czf "dist/$name.tar.gz" --owner=0 --group=0 "$name"
