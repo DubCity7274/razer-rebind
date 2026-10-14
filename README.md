@@ -41,7 +41,26 @@ in userspace:
 A device with no bindings is never grabbed. The app only watches it so it can
 show live key presses.
 
-## Building
+## Installing on Fedora / Nobara
+
+Build the RPM in a clean Fedora container (needs `podman`):
+
+```bash
+./packaging/build-rpm.sh
+```
+
+Then install it:
+
+```bash
+sudo dnf install ./dist/razer-rebind-*.x86_64.rpm
+```
+
+The package installs the app, its menu entry, the udev permission rule
+described below (applied right away, no replug needed), and the
+`razer-rebind` systemd user service. Use `FEDORA=43 ./packaging/build-rpm.sh`
+to build for another Fedora release.
+
+## Building from source
 
 Fedora / Nobara:
 
@@ -67,7 +86,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 
 ## Permissions
 
-The app needs read access to the Razer event nodes and write access to
+The RPM sets this up for you. When building from source, note that the app needs read access to the Razer event nodes and write access to
 `/dev/uinput`. The bundled udev rule grants both to the user logged in at the
 local seat, using `uaccess`, the same mechanism used for sound cards and game
 controllers:
@@ -85,7 +104,8 @@ show a tray icon.
 
 - **With a tray icon:** closing the window keeps it running in the tray. Use
   `razer-rebind --minimized` in your desktop's autostart.
-- **Headless (systemd user service):** after `sudo cmake --install build`:
+- **Headless (systemd user service):** installed by the RPM, or by
+  `sudo cmake --install build`:
 
   ```bash
   systemctl --user enable --now razer-rebind.service
@@ -226,3 +246,7 @@ wheel directions. Hotkey actions are `switch-profile`, `next-profile`,
 | `src/deviceview.*` | Clickable Huntsman Elite keyboard and Viper Ultimate mouse pictures |
 | `src/bindingdialog.*` | Binding editor (search, detect, record shortcut) |
 | `src/mainwindow.*` | Main window and tray |
+
+## License
+
+GPL-2.0-or-later, the same as OpenRazer. See [LICENSE](LICENSE).

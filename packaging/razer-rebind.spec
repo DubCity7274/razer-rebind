@@ -4,7 +4,7 @@ Release:        1%{?dist}
 Summary:        Key and button rebinding for Razer keyboards and mice (OpenRazer)
 
 License:        GPL-2.0-or-later
-URL:            https://github.com/dubcity7274/razer-rebind
+URL:            https://github.com/DubCity7274/razer-rebind
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  cmake
