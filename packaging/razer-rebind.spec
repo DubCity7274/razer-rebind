@@ -1,5 +1,5 @@
 Name:           razer-rebind
-Version:        0.2.0
+Version:        0.3.0
 Release:        1%{?dist}
 Summary:        Key and button rebinding for Razer keyboards and mice (OpenRazer)
 
@@ -61,6 +61,12 @@ udevadm trigger --subsystem-match=input --subsystem-match=misc --action=change >
 %{_udevrulesdir}/70-%{name}.rules
 
 %changelog
+* Wed Oct 14 2026 dub <111620773+DubCity7274@users.noreply.github.com> - 0.3.0-1
+- Real-time priority for input threads: remapped input stays under 0.03 ms
+  of added delay even with every CPU core busy
+- Virtual devices use the physical device's name, so per-device desktop
+  settings (KDE pointer acceleration, speed) keep applying
+
 * Wed Oct 14 2026 dub <111620773+DubCity7274@users.noreply.github.com> - 0.2.0-1
 - Profiles, global hotkeys and command-line profile switching
 - Fix notifications not showing after the first one expired
