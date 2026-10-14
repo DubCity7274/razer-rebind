@@ -33,17 +33,28 @@ Running it needs the udev rule from `data/`. udev only reads rules from
 sudo install -m644 data/70-razer-rebind.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
 ```
 
-### Building the RPM
+### Building the packages
 
-`packaging/build-rpm.sh` builds the RPM from the committed `HEAD` in a clean
-Fedora container with podman and puts the packages in `dist/`:
+Each script builds from the committed `HEAD` in a clean container with podman
+and puts the result in `dist/`:
 
 ```bash
 ./packaging/build-rpm.sh
 ```
 
-Set `FEDORA=43` (for example) to target another release. CI uses
-`./packaging/build-rpm.sh --direct`, which builds on the current machine.
+```bash
+./packaging/build-deb.sh ubuntu:24.04
+```
+
+```bash
+./packaging/build-tarball.sh
+```
+
+`FEDORA=43 ./packaging/build-rpm.sh` targets another Fedora release, and
+`build-deb.sh` takes any of `debian:12`, `debian:13`, `ubuntu:24.04` or
+`ubuntu:26.04`. The tarball is built on Debian 12, the oldest supported base,
+so it runs on anything newer. CI calls the same scripts with `--direct`, which
+builds on the current machine.
 
 ## How it works
 
@@ -95,7 +106,7 @@ are polled once a minute on a background thread.
 | `src/inputdetector.*` | "Press it on the device" detection used by both editors |
 | `src/mainwindow.*` | Main window, profiles UI and tray |
 | `data/` | udev rule, desktop entry, systemd user service |
-| `packaging/` | RPM spec and build script |
+| `packaging/` | RPM spec, Debian maintainer scripts, tarball installer, and the build scripts |
 
 ## Making a release
 
@@ -108,7 +119,8 @@ are polled once a minute on a background thread.
    git tag vX.Y.Z && git push origin vX.Y.Z
    ```
 
-The RPM workflow builds the packages and publishes a GitHub Release with them
-attached. It refuses to publish if the tag doesn't match the spec's
-`Version:`. Every push and pull request also builds the RPM; it can be
-downloaded from the workflow run's **Artifacts**.
+The Packages workflow builds the RPMs, .debs and tarball, and publishes a
+GitHub Release with all of them and a `SHA256SUMS` file attached. It refuses
+to run if the spec, `CMakeLists.txt` and tag versions disagree. Every push and
+pull request also builds all packages; they can be downloaded from the
+workflow run's **Artifacts**.

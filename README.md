@@ -48,31 +48,58 @@ the bindings list and **Detect**.
 
 ## Installation
 
+Download the package for your system from the
+[latest release](../../releases/latest). Every package installs the app, its
+menu entry, the background service and the device permission rule.
+
+| System | Download |
+|---|---|
+| Fedora 43, 44, Nobara | `razer-rebind-<version>.fc43.x86_64.rpm` or `.fc44` |
+| Debian 12, 13 | `razer-rebind_<version>-1_debian12_amd64.deb` or `_debian13` |
+| Ubuntu 24.04, 26.04 | `razer-rebind_<version>-1_ubuntu24.04_amd64.deb` or `_ubuntu26.04` |
+| Other distributions | `razer-rebind-<version>-linux-x86_64.tar.gz` (pre-compiled) |
+
+`SHA256SUMS` in the release lets you check that a download is intact
+(`sha256sum -c SHA256SUMS --ignore-missing`).
+
 ### Fedora and Nobara
 
-Download the latest `razer-rebind-*.x86_64.rpm` from
-[Releases](../../releases/latest), then install it:
-
 ```bash
-sudo dnf install ./razer-rebind-*.x86_64.rpm
+sudo dnf install ./razer-rebind-*.fc44.x86_64.rpm
 ```
 
-The package sets up device permissions for you. Then start **Razer Rebind**
-from your application menu.
+### Debian and Ubuntu
+
+```bash
+sudo apt install ./razer-rebind_*_ubuntu24.04_amd64.deb
+```
+
+Use the file for your release; `apt` installs the Qt and libevdev libraries it
+needs.
 
 ### Other distributions
 
-Build from source as described in [CONTRIBUTING.md](CONTRIBUTING.md#building),
-then install the app and the permission rule (see
-[Permissions](#permissions-and-privacy)):
+The pre-compiled tarball runs on distributions at least as new as Debian 12
+(glibc 2.36 or newer, Qt 6.4 or newer). Install Qt 6 (base and Wayland) and
+libevdev from your distribution first, for example on Arch:
 
 ```bash
-sudo cmake --install build
+sudo pacman -S qt6-base qt6-wayland libevdev
 ```
 
+Then unpack it and run the installer, which puts the app in `/usr/local` and
+the permission rule in `/etc/udev/rules.d`:
+
 ```bash
-sudo install -m644 data/70-razer-rebind.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
+tar xf razer-rebind-*-linux-x86_64.tar.gz && cd razer-rebind-*-linux-x86_64 && sudo ./install.sh
 ```
+
+`sudo ./uninstall.sh` in the same folder removes it again. Your settings are
+kept.
+
+To build from source instead, see [CONTRIBUTING.md](CONTRIBUTING.md#building).
+
+After installing, start **Razer Rebind** from your application menu.
 
 ## Usage
 

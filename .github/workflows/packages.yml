@@ -1,0 +1,142 @@
+# Builds every package on each push and pull request (download them from the
+# run's "Artifacts"). Pushing a tag like v0.5.0 also publishes a GitHub Release
+# with all packages and a SHA256SUMS file attached; the tag must match the
+# version in packaging/razer-rebind.spec and CMakeLists.txt.
+name: Packages
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Check version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Spec, CMake and tag agree
+        run: |
+          spec=$(sed -n 's/^Version: *//p' packaging/razer-rebind.spec)
+          cmake=$(sed -n 's/^project(razer-rebind VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          if [ "$spec" != "$cmake" ]; then
+            echo "::error::Version mismatch: spec $spec, CMakeLists.txt $cmake"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "v$spec" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match version $spec"
+            exit 1
+          fi
+
+  rpm:
+    name: RPM (Fedora ${{ matrix.fedora }})
+    needs: version
+    runs-on: ubuntu-latest
+    container: registry.fedoraproject.org/fedora:${{ matrix.fedora }}
+    strategy:
+      matrix:
+        fedora: ['43', '44']
+    steps:
+      # git must exist before checkout, or actions/checkout falls back to a
+      # tarball without history and `git archive` can't run.
+      - name: Install build tools
+        run: dnf -y install git rpm-build 'dnf-command(builddep)'
+      - uses: actions/checkout@v7
+      - name: Install build dependencies
+        run: dnf -y builddep packaging/razer-rebind.spec
+      - name: Build
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          ./packaging/build-rpm.sh --direct
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rpm-fedora-${{ matrix.fedora }}
+          path: |
+            dist/*.rpm
+            !dist/*-debuginfo-*.rpm
+            !dist/*-debugsource-*.rpm
+          if-no-files-found: error
+
+  deb:
+    name: DEB (${{ matrix.image }})
+    needs: version
+    runs-on: ubuntu-latest
+    container: docker.io/library/${{ matrix.image }}
+    strategy:
+      matrix:
+        include:
+          - { image: 'debian:12', distro: debian12 }
+          - { image: 'debian:13', distro: debian13 }
+          - { image: 'ubuntu:24.04', distro: ubuntu24.04 }
+          - { image: 'ubuntu:26.04', distro: ubuntu26.04 }
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends build-essential cmake pkg-config qt6-base-dev \
+            libevdev-dev dpkg-dev file git ca-certificates
+      - uses: actions/checkout@v7
+      - name: Build
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          ./packaging/build-deb.sh --direct ${{ matrix.distro }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: deb-${{ matrix.distro }}
+          path: dist/*.deb
+          if-no-files-found: error
+
+  tarball:
+    name: Pre-compiled tarball
+    needs: version
+    runs-on: ubuntu-latest
+    container: docker.io/library/debian:12
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends build-essential cmake pkg-config qt6-base-dev \
+            libevdev-dev git ca-certificates
+      - uses: actions/checkout@v7
+      - name: Build
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          ./packaging/build-tarball.sh --direct
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tarball
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [rpm, deb, tarball]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" * \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Razer Rebind ${GITHUB_REF_NAME#v}" \
+            --generate-notes
