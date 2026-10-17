@@ -1,7 +1,8 @@
 # Builds every package (RPM, .deb, tarball, AppImage) on each push and pull request (download them from the
 # run's "Artifacts"). Pushing a tag like v0.5.0 also publishes a GitHub Release
-# with all packages and a SHA256SUMS file attached; the tag must match the
-# version in packaging/razer-rebind.spec and CMakeLists.txt.
+# with all packages and a SHA256SUMS file attached, and that version's
+# CHANGELOG.md section as the release text; the tag must match the version in
+# packaging/razer-rebind.spec and CMakeLists.txt.
 name: Packages
 
 on:
@@ -30,6 +31,10 @@ jobs:
           fi
           if [ "$GITHUB_REF_TYPE" = tag ] && [ "v$spec" != "$GITHUB_REF_NAME" ]; then
             echo "::error::Tag $GITHUB_REF_NAME doesn't match version $spec"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = tag ] && ! ./packaging/release-notes.sh "$spec" >/dev/null; then
+            echo "::error::CHANGELOG.md has no entry for $spec"
             exit 1
           fi
 
@@ -149,6 +154,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v8
         with:
           path: dist
@@ -158,9 +165,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          ./packaging/release-notes.sh "${GITHUB_REF_NAME#v}" > release-notes.md
           cd dist
           sha256sum * > SHA256SUMS
           gh release create "$GITHUB_REF_NAME" * \
             --repo "$GITHUB_REPOSITORY" \
             --title "Razer Rebind ${GITHUB_REF_NAME#v}" \
-            --generate-notes
+            --notes-file ../release-notes.md

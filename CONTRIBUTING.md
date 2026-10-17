@@ -131,7 +131,10 @@ are polled once a minute on a background thread.
 1. Bump the version in `CMakeLists.txt` (`project(... VERSION x.y.z)`) and in
    `packaging/razer-rebind.spec` (`Version:`), and add a `%changelog` entry
    to the spec.
-2. Commit, then tag and push the tag:
+2. Add a `## x.y.z (date)` section to `CHANGELOG.md`, written for users. It
+   becomes the text of the GitHub release, followed by a download guide.
+   Preview it with `./packaging/release-notes.sh x.y.z`.
+3. Commit, then tag and push the tag:
 
    ```bash
    git tag vX.Y.Z && git push origin vX.Y.Z
@@ -139,6 +142,7 @@ are polled once a minute on a background thread.
 
 The Packages workflow builds the RPMs, .debs, tarball and AppImage, and publishes a
 GitHub Release with all of them and a `SHA256SUMS` file attached. It refuses
-to run if the spec, `CMakeLists.txt` and tag versions disagree. Every push and
+to run if the spec, `CMakeLists.txt` and tag versions disagree, or if
+`CHANGELOG.md` has no entry for the version. Every push and
 pull request also builds all packages; they can be downloaded from the
 workflow run's **Artifacts**.

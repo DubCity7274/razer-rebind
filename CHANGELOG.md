@@ -1,0 +1,63 @@
+# Changelog
+
+## 0.5.0 (2026-10-17)
+
+### New features
+
+- **Hypershift.** Bind any key or button to **Hypershift**. While you hold
+  it, every device switches to a second layer of bindings, like Razer
+  Synapse's Hypershift. Holding a mouse side button can change what your
+  keyboard keys do. Keys you don't bind in the Hypershift layer keep their
+  normal binding. Each profile has its own Hypershift layer.
+- **Turbo.** Any binding can repeat for as long as you hold it, at 1 to 50
+  presses per second. Each press is held down for half the interval, so games
+  that check key state once per frame see every press. To make a key repeat
+  itself, bind it to itself with turbo on. Turbo works in the Hypershift
+  layer too.
+
+### Changes
+
+- A **Layer: Normal / Hypershift** switch above the device picture chooses
+  which layer you're editing. Bound keys are purple in the Hypershift layer
+  and blue in the normal one, and keys that use their normal binding are
+  shown dimmed.
+- Bindings with turbo show their rate, e.g. "F · turbo 15/s".
+- Automated tests of the remapper run during every build, with no Razer
+  hardware needed.
+
+### Upgrading
+
+Your settings carry over unchanged. Bindings with turbo are saved in a new
+form; if you go back to 0.4.x, those bindings turn into "Do nothing".
+
+## 0.4.1 (2026-10-14)
+
+- Packages for Debian 12 and 13, Ubuntu 24.04 and 26.04, and Fedora 43, a
+  pre-compiled tarball, and an AppImage.
+- App icon. `razer-rebind --print-udev-rule` installs the permission rule
+  where no package did.
+- The command socket moved to the private per-user runtime directory.
+
+## 0.4.0 (2026-10-14)
+
+- Profiles per device: switch the keyboard and mouse independently, or every
+  device with a shared profile name. Hotkeys and `--device` can target one
+  device.
+- Low battery notifications for wireless devices at a level you choose.
+- Settings window. Battery level shown in the device list and tray.
+
+## 0.3.0 (2026-10-14)
+
+- Real-time priority for input threads: remapped input stays under 0.03 ms
+  of added delay even with every CPU core busy.
+- Virtual devices use the physical device's name, so per-device desktop
+  settings (KDE pointer acceleration and speed) keep applying.
+
+## 0.2.0 (2026-10-14)
+
+- Profiles, global hotkeys and command-line profile switching.
+- Fixed notifications not showing after the first one expired.
+
+## 0.1.0
+
+- First release.

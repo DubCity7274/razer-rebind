@@ -1,5 +1,5 @@
 Name:           razer-rebind
-Version:        0.4.1
+Version:        0.5.0
 Release:        1%{?dist}
 Summary:        Key and button rebinding for Razer keyboards and mice (OpenRazer)
 
@@ -63,6 +63,12 @@ udevadm trigger --subsystem-match=input --subsystem-match=misc --action=change >
 %{_udevrulesdir}/70-%{name}.rules
 
 %changelog
+* Sat Oct 17 2026 dub <111620773+DubCity7274@users.noreply.github.com> - 0.5.0-1
+- Hypershift: hold a chosen key or button to switch every device to a
+  second layer of bindings
+- Turbo: bindings can repeat while held, 1 to 50 presses per second
+- Normal / Hypershift layer switch in the main window; remapper tests
+
 * Wed Oct 14 2026 dub <111620773+DubCity7274@users.noreply.github.com> - 0.4.1-1
 - Packages for Debian 12/13, Ubuntu 24.04/26.04 and Fedora 43, a
   pre-compiled tarball, and an AppImage
