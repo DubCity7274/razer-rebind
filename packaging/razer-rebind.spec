@@ -1,5 +1,5 @@
 Name:           razer-rebind
-Version:        0.6.0
+Version:        0.7.0
 Release:        1%{?dist}
 Summary:        Key and button rebinding for Razer keyboards and mice (OpenRazer)
 
@@ -63,6 +63,10 @@ udevadm trigger --subsystem-match=input --subsystem-match=misc --action=change >
 %{_udevrulesdir}/70-%{name}.rules
 
 %changelog
+* Sat Oct 17 2026 dub <111620773+DubCity7274@users.noreply.github.com> - 0.7.0-1
+- DPI stages and polling rate for mice, saved per profile and applied on
+  profile switches; through openrazer-daemon when it runs
+
 * Sat Oct 17 2026 dub <111620773+DubCity7274@users.noreply.github.com> - 0.6.0-1
 - Per-game profiles: devices switch to a profile while a linked program
   runs, and back when it exits; Wine and Proton games match by .exe name
