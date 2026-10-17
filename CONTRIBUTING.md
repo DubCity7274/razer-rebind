@@ -96,6 +96,12 @@ held Hypershift keys makes every device look up its Hypershift layer first.
 Turbo keys are timed with `ppoll()` timeouts and pulse their outputs at the
 chosen rate, each press held for half the interval.
 
+DPI and polling rate go through openrazer-daemon's D-Bus API
+(`razer.device.dpi`, `razer.device.misc`) when it runs, so the daemon's own
+saved state stays in step; otherwise the `dpi_stages`, `dpi` and `poll_rate`
+sysfs attributes are written directly. They're written only when the active
+profile's values differ from the last ones written to that mouse.
+
 Automatic profile switching reads `/proc` every two seconds for the user's
 processes. A process is known by argv[0] (which holds the Windows path for
 Wine and Proton games), its executable and its kernel name. Before switching,
@@ -119,6 +125,8 @@ are polled once a minute on a background thread.
 | `src/remapper.*` | Per-device worker thread: grab, remap, Hypershift, turbo, hotkeys, uinput output, LED forwarding |
 | `src/remapmanager.*` | Owns the remappers, follows hotplug, applies the active profile, runs hotkey actions, command socket, notifications |
 | `src/config.*` | Per-device profiles, hotkeys, settings; JSON storage and migration |
+| `src/sensor.*` | Mouse DPI stages and polling rate, through openrazer-daemon or sysfs |
+| `src/sensorpanel.*` | The DPI / polling rate bar in the main window |
 | `src/processes.*` | The user's running programs, read from `/proc` |
 | `src/autoswitcher.*` | Switches profiles while their linked programs run |
 | `src/programsdialog.*` | Editor for a profile's programs, with a running-program picker |

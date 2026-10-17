@@ -2,6 +2,7 @@
 
 #include "notifications.h"
 #include "remapper.h"
+#include "sensor.h"
 
 #include <QDBusConnection>
 #include <QDir>
@@ -183,6 +184,11 @@ void RemapManager::rescan()
     if (newDevice)
         m_config->save(nullptr);
 
+    // A device that went away (the wireless mouse sleeping, unplugged) gets
+    // its DPI set again when it's back.
+    for (auto it = m_appliedSensor.begin(); it != m_appliedSensor.end();)
+        it = byPath.contains(it.key()) ? std::next(it) : m_appliedSensor.erase(it);
+
     m_devices = found;
     applyProfile();
     emit devicesChanged();
@@ -232,7 +238,24 @@ void RemapManager::applyProfile()
                                             [r](const Hotkey &h) { return r->canProduce(h.code); });
         r->setActive(m_config->remappingEnabled && p.enabled && (!p.bindings.isEmpty() || !p.hypershift.isEmpty() || hotkeyHere));
     }
+
+    // DPI and polling rate go to the mouse over USB, so only when they change:
+    // a profile switch, an edit, or the mouse reconnecting.
+    for (const RazerDevice &d : std::as_const(m_devices)) {
+        const SensorSettings wanted = m_config->device(d.profileKey).sensor;
+        if (d.kind != RazerDevice::Mouse || !wanted.isValid() || m_appliedSensor.value(d.hidPath) == wanted)
+            continue;
+        QString error;
+        if (!Sensor(d).write(wanted, &error))
+            emit message(tr("Could not set the DPI of the %1: %2").arg(d.profileKey, error));
+        m_appliedSensor.insert(d.hidPath, wanted);
+    }
     emit stateChanged();
+}
+
+void RemapManager::markSensorApplied(const QString &hidPath, const SensorSettings &settings)
+{
+    m_appliedSensor.insert(hidPath, settings);
 }
 
 // --- remote control ----------------------------------------------------------

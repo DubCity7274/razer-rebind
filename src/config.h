@@ -1,6 +1,7 @@
 #pragma once
 
 #include "keys.h"
+#include "sensor.h"
 
 #include <QHash>
 #include <QList>
@@ -17,6 +18,8 @@ struct DeviceProfile
     // Used instead while any Hypershift key is held (on any device); keys
     // without a binding here fall back to `bindings`.
     BindingMap hypershift;
+    // DPI stages and polling rate for mice; not valid = leave the mouse alone.
+    SensorSettings sensor;
 
     bool hasHypershiftKey() const;
 };
@@ -90,6 +93,12 @@ public:
     QString autoRestore(const QString &device) const { return m_devices.value(device).autoRestore; }
     void setAutoRestore(const QString &device, const QString &profile);
 
+    // Give every profile of the device that has no sensor settings yet these,
+    // so changing one profile's DPI doesn't carry over to the others.
+    void fillSensor(const QString &device, const SensorSettings &settings);
+
+    // A new profile starts with `copyFrom`'s bindings, if given, and with the
+    // sensor settings of `copyFrom` or the active profile.
     bool addProfile(const QString &device, const QString &name, const QString &copyFrom = {});
     bool renameProfile(const QString &device, const QString &from, const QString &to);
     bool removeProfile(const QString &device, const QString &name);
@@ -101,6 +110,7 @@ private:
         BindingMap bindings;
         BindingMap hypershift;
         QStringList programs;
+        SensorSettings sensor;
     };
     struct DeviceSettings
     {

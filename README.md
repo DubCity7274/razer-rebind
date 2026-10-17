@@ -13,6 +13,9 @@ drivers, runs on X11 and Wayland, and needs no root once installed.
   button and your keyboard keys do something else.
 - **Turbo:** a key or button repeats as long as you hold it, from 1 to 50
   presses per second.
+- **DPI and polling rate:** set up to five DPI stages for the button under
+  the mouse, and the polling rate. Each profile keeps its own, so a game's
+  profile can bring its own sensitivity.
 - **Profiles per device:** keep separate sets of bindings, such as
   "Desktop", "Gaming" and "Editing", for each device. Switch the keyboard
   without touching the mouse, or switch everything at once.
@@ -184,6 +187,18 @@ the **Profiles** menu (and the tray menu) lists every device's profiles, plus
 an **All devices** section that switches every device that has a profile of
 that name.
 
+### DPI and polling rate
+
+When a mouse is selected, the bar above its bindings sets its DPI stages and
+polling rate. The DPI button under the mouse cycles through the stages; the
+round button in front of a stage picks it now. Changes apply right away.
+
+Each profile keeps its own DPI and polling rate, so switching profiles, by
+hand, by hotkey or when a game starts, changes them too. The first time you
+change them, your other profiles keep the mouse's current settings. With
+openrazer-daemon running, settings go through it, so they stick when the
+mouse reconnects; without it, Razer Rebind sets them again itself.
+
 ### Switching profiles automatically
 
 A profile can switch on by itself while a game (or any program) runs:
@@ -330,7 +345,8 @@ Razer Rebind makes no network connections. Your settings stay in
 - **Fn key (Huntsman Elite):** handled inside the OpenRazer driver and never
   reaches applications, so it can't be rebound. Fn combinations can be,
   using whatever key the driver turns them into.
-- **DPI button (Viper Ultimate):** handled by the mouse's firmware.
+- **DPI button (Viper Ultimate):** handled by the mouse's firmware, so it
+  can't be rebound. It cycles through the DPI stages you set.
 - **Viper Ultimate side buttons:** with the factory settings, the right-hand
   buttons send the same signals as the left-hand ones, so each pair is
   rebound together. **Detect** shows what your mouse actually sends.
@@ -351,7 +367,8 @@ running. Keys use Linux input names such as `KEY_CAPSLOCK` and `BTN_SIDE`;
 an input. `["HYPERSHIFT"]` makes a key a Hypershift key, a profile's
 `hypershift` object holds its Hypershift layer, and a binding with turbo is
 written as `{ "keys": [...], "turbo": 15 }`. A profile's `programs` lists the
-programs that switch to it automatically.
+programs that switch to it automatically, and `sensor` its DPI stages
+(`activeStage` counts from 1) and polling rate.
 
 ```json
 {
@@ -377,7 +394,11 @@ programs that switch to it automatically.
       "enabled": true,
       "activeProfile": "Desktop",
       "profiles": [
-        { "name": "Desktop", "bindings": { "BTN_SIDE": ["KEY_LEFTCTRL", "KEY_C"] } }
+        {
+          "name": "Desktop",
+          "bindings": { "BTN_SIDE": ["KEY_LEFTCTRL", "KEY_C"] },
+          "sensor": { "dpiStages": [800, 1600, 3200], "activeStage": 1, "pollRate": 1000 }
+        }
       ]
     }
   ],

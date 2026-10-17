@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.0 (unreleased)
+
+### New features
+
+- **DPI and polling rate.** A bar above a mouse's bindings sets up to five
+  DPI stages, which the DPI button under the mouse cycles through, and the
+  polling rate. Changes apply right away.
+- **Per-profile sensitivity.** Each profile keeps its own DPI stages and
+  polling rate, so switching profiles (by hand, by hotkey or when a game
+  starts) changes them too. The first time you change them, your other
+  profiles keep the mouse's current settings.
+
+### Changes
+
+- Settings go through openrazer-daemon when it runs, so they stick when the
+  mouse reconnects and stay in step with other OpenRazer apps.
+
 ## 0.6.0 (2026-10-17)
 
 ### New features

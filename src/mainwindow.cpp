@@ -9,6 +9,7 @@
 #include "config.h"
 #include "remapmanager.h"
 #include "remapper.h"
+#include "sensorpanel.h"
 #include "settingsdialog.h"
 
 #include <QActionGroup>
@@ -213,9 +214,12 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
 
     auto *rightSplit = new QSplitter(Qt::Vertical);
     rightSplit->addWidget(m_views);
+    m_sensor = new SensorPanel(m_config, m_manager);
     auto *bindingPane = new QWidget;
-    bindingPane->setLayout(bindingRow);
-    bindingRow->setContentsMargins(0, 0, 0, 0);
+    auto *bindingLayout = new QVBoxLayout(bindingPane);
+    bindingLayout->setContentsMargins(0, 0, 0, 0);
+    bindingLayout->addWidget(m_sensor);
+    bindingLayout->addLayout(bindingRow);
     rightSplit->addWidget(bindingPane);
     rightSplit->setStretchFactor(0, 1);
     rightSplit->setStretchFactor(1, 0);
@@ -462,6 +466,7 @@ void MainWindow::selectDevice()
     m_mouseView->clearPressed();
 
     if (!dev) {
+        m_sensor->setDevice(nullptr);
         m_title->setText(tr("No device"));
         m_details->clear();
         m_views->setCurrentIndex(0);
@@ -498,6 +503,7 @@ void MainWindow::selectDevice()
     refreshBindings();
     refreshState();
     refreshProfiles();
+    m_sensor->setDevice(dev);
 }
 
 QString MainWindow::batteryText(const QString &hidPath) const

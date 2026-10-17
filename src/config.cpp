@@ -76,6 +76,29 @@ QJsonObject bindingsToJson(const BindingMap &bindings)
     return out;
 }
 
+SensorSettings sensorFromJson(const QJsonObject &o)
+{
+    SensorSettings s;
+    for (const QJsonValue &v : o.value(QStringLiteral("dpiStages")).toArray())
+        if (s.stages.size() < Sensor::MaxStages && v.toInt() >= Sensor::MinDpi)
+            s.stages << v.toInt();
+    s.activeStage = std::clamp(o.value(QStringLiteral("activeStage")).toInt(1) - 1, 0,
+                               std::max(0, int(s.stages.size()) - 1));
+    s.pollRate = std::max(0, o.value(QStringLiteral("pollRate")).toInt());
+    return s;
+}
+
+QJsonObject sensorToJson(const SensorSettings &s)
+{
+    QJsonArray stages;
+    for (int d : s.stages)
+        stages.append(d);
+    QJsonObject o{{QStringLiteral("dpiStages"), stages}, {QStringLiteral("activeStage"), s.activeStage + 1}};
+    if (s.pollRate > 0)
+        o.insert(QStringLiteral("pollRate"), s.pollRate);
+    return o;
+}
+
 QString tr(const char *text)
 {
     return QCoreApplication::translate("Hotkey", text);
@@ -170,7 +193,8 @@ bool Config::load(const QString &path, QString *error)
                     if (const QString prog = v.toString().trimmed(); !prog.isEmpty() && !programs.contains(prog))
                         programs << prog;
                 ds.profiles << Profile{name, bindingsFromJson(p.value(QStringLiteral("bindings")).toObject()),
-                                       bindingsFromJson(p.value(QStringLiteral("hypershift")).toObject()), programs};
+                                       bindingsFromJson(p.value(QStringLiteral("hypershift")).toObject()), programs,
+                                       sensorFromJson(p.value(QStringLiteral("sensor")).toObject())};
             }
         }
     } else if (version == 2) {
@@ -188,7 +212,7 @@ bool Config::load(const QString &path, QString *error)
                 const QJsonObject d = p.value(QStringLiteral("devices")).toObject().value(key).toObject();
                 if (name.isEmpty() || findProfile(key, name))
                     continue;
-                ds.profiles << Profile{name, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}, {}};
+                ds.profiles << Profile{name, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}, {}, {}};
                 if (name == active) {
                     ds.active = name;
                     ds.enabled = d.value(QStringLiteral("enabled")).toBool(true);
@@ -202,13 +226,13 @@ bool Config::load(const QString &path, QString *error)
             const QJsonObject d = it.value().toObject();
             DeviceSettings &ds = addDevice(it.key());
             ds.enabled = d.value(QStringLiteral("enabled")).toBool(true);
-            ds.profiles << Profile{DefaultProfile, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}, {}};
+            ds.profiles << Profile{DefaultProfile, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}, {}, {}};
         }
     }
 
     for (auto it = m_devices.begin(); it != m_devices.end(); ++it) {
         if (it->profiles.isEmpty())
-            it->profiles << Profile{DefaultProfile, {}, {}, {}};
+            it->profiles << Profile{DefaultProfile, {}, {}, {}, {}};
         if (!findProfile(it.key(), it->active))
             it->active = it->profiles.first().name;
     }
@@ -250,6 +274,8 @@ bool Config::save(QString *error) const
                 o.insert(QStringLiteral("hypershift"), bindingsToJson(p.hypershift));
             if (!p.programs.isEmpty())
                 o.insert(QStringLiteral("programs"), QJsonArray::fromStringList(p.programs));
+            if (p.sensor.isValid())
+                o.insert(QStringLiteral("sensor"), sensorToJson(p.sensor));
             profiles.append(o);
         }
         QJsonObject d{{QStringLiteral("name"), key},
@@ -311,7 +337,7 @@ bool Config::ensureDevice(const QString &device)
         return false;
     m_deviceOrder << device;
     DeviceSettings &ds = m_devices[device];
-    ds.profiles << Profile{DefaultProfile, {}, {}, {}};
+    ds.profiles << Profile{DefaultProfile, {}, {}, {}, {}};
     ds.active = DefaultProfile;
     return true;
 }
@@ -337,6 +363,7 @@ DeviceProfile Config::device(const QString &device) const
     if (const Profile *p = findProfile(device, it->active)) {
         out.bindings = p->bindings;
         out.hypershift = p->hypershift;
+        out.sensor = p->sensor;
     }
     return out;
 }
@@ -350,6 +377,7 @@ void Config::setDevice(const QString &device, const DeviceProfile &profile)
         if (p.name == ds.active) {
             p.bindings = profile.bindings;
             p.hypershift = profile.hypershift;
+            p.sensor = profile.sensor;
         }
 }
 
@@ -420,6 +448,13 @@ void Config::setPrograms(const QString &device, const QString &profile, const QS
             p.programs = programs;
 }
 
+void Config::fillSensor(const QString &device, const SensorSettings &settings)
+{
+    for (Profile &p : m_devices[device].profiles)
+        if (!p.sensor.isValid())
+            p.sensor = settings;
+}
+
 void Config::setAutoRestore(const QString &device, const QString &profile)
 {
     if (m_devices.contains(device))
@@ -433,7 +468,10 @@ bool Config::addProfile(const QString &device, const QString &name, const QStrin
     ensureDevice(device);
     const Profile *source = findProfile(device, copyFrom);
     // A copy doesn't take the programs: two profiles claiming one game would fight.
-    m_devices[device].profiles << (source ? Profile{name, source->bindings, source->hypershift, {}} : Profile{name, {}, {}, {}});
+    const Profile *active = findProfile(device, activeProfile(device));
+    const SensorSettings sensor = source ? source->sensor : active ? active->sensor : SensorSettings();
+    m_devices[device].profiles << (source ? Profile{name, source->bindings, source->hypershift, {}, sensor}
+                                          : Profile{name, {}, {}, {}, sensor});
     return true;
 }
 

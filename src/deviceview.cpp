@@ -386,7 +386,9 @@ void MouseView::paintOverlay(QPainter &p) const
         p.setFont(nameFont);
         p.drawText(box, c.align | Qt::AlignTop, c.name);
         p.setFont(bindFont);
-        p.setPen(b && !inherited ? accent() : pal.color(QPalette::PlaceholderText));
+        p.setPen(b && b->isHypershift() ? QColor(150, 90, 220)
+                 : b && !inherited     ? accent()
+                                       : pal.color(QPalette::PlaceholderText));
         const QString text = b ? QStringLiteral("→ ") + Keys::bindingLabel(*b) : tr("default");
         p.drawText(box, c.align | Qt::AlignBottom,
                    QFontMetrics(bindFont).elidedText(text, Qt::ElideRight, int(box.width())));
@@ -397,6 +399,7 @@ void MouseView::paintOverlay(QPainter &p) const
     p.setFont(noteFont);
     p.setPen(pal.color(QPalette::PlaceholderText));
     p.drawText(t.mapRect(QRectF(0, 9.4, 4.6, 3.2)), Qt::AlignRight | Qt::AlignBottom | Qt::TextWordWrap,
-               tr("The DPI button underneath is handled by the mouse firmware and can't be rebound."));
+               tr("The DPI button underneath is handled by the mouse firmware and can't be rebound. It "
+                  "cycles through the DPI stages set below."));
     p.restore();
 }

@@ -43,6 +43,9 @@ public:
 
     // Call after changing the config.
     void applyProfile();
+    // The mouse already has these sensor settings (read from it), so
+    // applyProfile() needn't write them.
+    void markSensorApplied(const QString &hidPath, const SensorSettings &settings);
 
     // Accept commands from `razer-rebind --profile ...` and friends.
     bool listen();
@@ -71,6 +74,7 @@ private:
     QList<RazerDevice> m_devices;
     QHash<QString, Remapper *> m_remappers; // by hidPath
     QHash<QString, QString> m_errors;       // by hidPath
+    QHash<QString, SensorSettings> m_appliedSensor; // by hidPath: last DPI / poll rate written
     QFileSystemWatcher m_watcher;
     QTimer m_rescanTimer;
     int m_retries = 0;

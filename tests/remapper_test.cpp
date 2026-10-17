@@ -328,6 +328,33 @@ int main(int argc, char **argv)
         CHECK(json.contains("\"HYPERSHIFT\""));
     }
 
+    // Sensor settings: saved per profile; the first one set is copied to the
+    // device's other profiles, and new profiles start from the active one.
+    {
+        const QString path = dir.filePath(QStringLiteral("sensor.json"));
+        const QString m = QStringLiteral("mouse");
+        Config c;
+        c.load(path, nullptr);
+        c.ensureDevice(m);
+        c.addProfile(m, QStringLiteral("Game"));
+        SensorSettings before{{800}, 0, 1000};
+        c.fillSensor(m, before);
+        c.setActiveProfile(m, QStringLiteral("Game"));
+        DeviceProfile p = c.device(m);
+        CHECK(p.sensor == before);
+        p.sensor = SensorSettings{{400, 1600, 3200}, 2, 500};
+        c.setDevice(m, p);
+        c.addProfile(m, QStringLiteral("Game 2"));
+        CHECK(c.save(nullptr));
+        Config loaded;
+        CHECK(loaded.load(path, nullptr));
+        CHECK(loaded.device(m).sensor == p.sensor);
+        loaded.setActiveProfile(m, QStringLiteral("Default"));
+        CHECK(loaded.device(m).sensor == before);
+        loaded.setActiveProfile(m, QStringLiteral("Game 2"));
+        CHECK(loaded.device(m).sensor == p.sensor);
+    }
+
     if (g_failures)
         std::fprintf(stderr, "%d check(s) failed\n", g_failures);
     else
