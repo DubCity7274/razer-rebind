@@ -1,5 +1,6 @@
 #pragma once
 
+#include "keys.h"
 #include "razerdevice.h"
 
 #include <QHash>
@@ -42,7 +43,9 @@ private:
     void editBinding(int sourceCode);
     void removeSelectedBinding();
     void clearBindings();
-    void storeBinding(int oldSource, int source, const QList<int> &targets);
+    void storeBinding(int oldSource, int source, const Binding &binding);
+    void setHypershiftLayer(bool on);
+    QString hypershiftKeysText() const;
     void saveProfile();
     void showPermissionHelp();
     void setupTray();
@@ -74,6 +77,10 @@ private:
     QPushButton *m_editButton;
     QPushButton *m_removeButton;
     QPushButton *m_clearButton;
+    QPushButton *m_layerNormal;
+    QPushButton *m_layerHypershift;
+    QLabel *m_layerHint;
+    bool m_hypershiftLayer = false; // editing the Hypershift layer instead of the normal one
     QAction *m_toggleAction;
     QComboBox *m_profileCombo;
     QMenu *m_profileMenu;

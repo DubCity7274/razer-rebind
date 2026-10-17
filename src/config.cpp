@@ -29,20 +29,30 @@ const struct { unsigned bit; const char *name; } ModifierNames[] = {
 
 BindingMap bindingsFromJson(const QJsonObject &bindings)
 {
+    // A binding is a list of key names, or {"keys": [...], "turbo": n} when it
+    // has options.
     BindingMap out;
     for (auto b = bindings.begin(); b != bindings.end(); ++b) {
         const int source = Keys::fromName(b.key());
         if (source < 0)
             continue;
-        QList<int> targets;
-        bool valid = true;
-        for (const QJsonValue &v : b.value().toArray()) {
-            const int code = Keys::fromName(v.toString());
-            valid = valid && Keys::isValidTarget(code);
-            targets << code;
+        Binding binding;
+        QJsonArray keys = b.value().toArray();
+        if (b.value().isObject()) {
+            const QJsonObject o = b.value().toObject();
+            keys = o.value(QStringLiteral("keys")).toArray();
+            binding.turbo = std::clamp(o.value(QStringLiteral("turbo")).toInt(0), 0, Keys::TurboMax);
         }
+        bool valid = true;
+        for (const QJsonValue &v : std::as_const(keys)) {
+            const int code = Keys::fromName(v.toString());
+            valid = valid && (Keys::isValidTarget(code) || (code == Keys::Hypershift && keys.size() == 1));
+            binding.targets << code;
+        }
+        if (binding.isHypershift() || Keys::isWheel(source))
+            binding.turbo = 0;
         if (valid)
-            out.insert(source, targets);
+            out.insert(source, binding);
     }
     return out;
 }
@@ -53,10 +63,15 @@ QJsonObject bindingsToJson(const BindingMap &bindings)
     std::sort(sources.begin(), sources.end());
     QJsonObject out;
     for (int source : sources) {
+        const Binding &b = bindings[source];
         QJsonArray targets;
-        for (int t : bindings.value(source))
+        for (int t : b.targets)
             targets.append(Keys::name(t));
-        out.insert(Keys::name(source), targets);
+        if (b.turbo > 0)
+            out.insert(Keys::name(source), QJsonObject{{QStringLiteral("keys"), targets},
+                                                       {QStringLiteral("turbo"), b.turbo}});
+        else
+            out.insert(Keys::name(source), targets);
     }
     return out;
 }
@@ -67,6 +82,11 @@ QString tr(const char *text)
 }
 
 } // namespace
+
+bool DeviceProfile::hasHypershiftKey() const
+{
+    return std::any_of(bindings.cbegin(), bindings.cend(), [](const Binding &b) { return b.isHypershift(); });
+}
 
 QString shortDeviceName(const QString &deviceKey)
 {
@@ -142,7 +162,8 @@ bool Config::load(const QString &path, QString *error)
                 const QJsonObject p = pv.toObject();
                 const QString name = p.value(QStringLiteral("name")).toString().trimmed();
                 if (!name.isEmpty() && !findProfile(key, name))
-                    ds.profiles << Profile{name, bindingsFromJson(p.value(QStringLiteral("bindings")).toObject())};
+                    ds.profiles << Profile{name, bindingsFromJson(p.value(QStringLiteral("bindings")).toObject()),
+                                           bindingsFromJson(p.value(QStringLiteral("hypershift")).toObject())};
             }
         }
     } else if (version == 2) {
@@ -160,7 +181,7 @@ bool Config::load(const QString &path, QString *error)
                 const QJsonObject d = p.value(QStringLiteral("devices")).toObject().value(key).toObject();
                 if (name.isEmpty() || findProfile(key, name))
                     continue;
-                ds.profiles << Profile{name, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject())};
+                ds.profiles << Profile{name, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}};
                 if (name == active) {
                     ds.active = name;
                     ds.enabled = d.value(QStringLiteral("enabled")).toBool(true);
@@ -174,13 +195,13 @@ bool Config::load(const QString &path, QString *error)
             const QJsonObject d = it.value().toObject();
             DeviceSettings &ds = addDevice(it.key());
             ds.enabled = d.value(QStringLiteral("enabled")).toBool(true);
-            ds.profiles << Profile{DefaultProfile, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject())};
+            ds.profiles << Profile{DefaultProfile, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}};
         }
     }
 
     for (auto it = m_devices.begin(); it != m_devices.end(); ++it) {
         if (it->profiles.isEmpty())
-            it->profiles << Profile{DefaultProfile, {}};
+            it->profiles << Profile{DefaultProfile, {}, {}};
         if (!findProfile(it.key(), it->active))
             it->active = it->profiles.first().name;
     }
@@ -216,9 +237,12 @@ bool Config::save(QString *error) const
     for (const QString &key : m_deviceOrder) {
         const DeviceSettings &ds = m_devices[key];
         QJsonArray profiles;
-        for (const Profile &p : ds.profiles)
-            profiles.append(QJsonObject{{QStringLiteral("name"), p.name},
-                                        {QStringLiteral("bindings"), bindingsToJson(p.bindings)}});
+        for (const Profile &p : ds.profiles) {
+            QJsonObject o{{QStringLiteral("name"), p.name}, {QStringLiteral("bindings"), bindingsToJson(p.bindings)}};
+            if (!p.hypershift.isEmpty())
+                o.insert(QStringLiteral("hypershift"), bindingsToJson(p.hypershift));
+            profiles.append(o);
+        }
         devices.append(QJsonObject{{QStringLiteral("name"), key},
                                    {QStringLiteral("enabled"), ds.enabled},
                                    {QStringLiteral("activeProfile"), ds.active},
@@ -274,7 +298,7 @@ bool Config::ensureDevice(const QString &device)
         return false;
     m_deviceOrder << device;
     DeviceSettings &ds = m_devices[device];
-    ds.profiles << Profile{DefaultProfile, {}};
+    ds.profiles << Profile{DefaultProfile, {}, {}};
     ds.active = DefaultProfile;
     return true;
 }
@@ -297,8 +321,10 @@ DeviceProfile Config::device(const QString &device) const
     if (it == m_devices.constEnd())
         return out;
     out.enabled = it->enabled;
-    if (const Profile *p = findProfile(device, it->active))
+    if (const Profile *p = findProfile(device, it->active)) {
         out.bindings = p->bindings;
+        out.hypershift = p->hypershift;
+    }
     return out;
 }
 
@@ -308,8 +334,10 @@ void Config::setDevice(const QString &device, const DeviceProfile &profile)
     DeviceSettings &ds = m_devices[device];
     ds.enabled = profile.enabled;
     for (Profile &p : ds.profiles)
-        if (p.name == ds.active)
+        if (p.name == ds.active) {
             p.bindings = profile.bindings;
+            p.hypershift = profile.hypershift;
+        }
 }
 
 QStringList Config::profileNames(const QString &device) const
@@ -372,7 +400,7 @@ bool Config::addProfile(const QString &device, const QString &name, const QStrin
         return false;
     ensureDevice(device);
     const Profile *source = findProfile(device, copyFrom);
-    m_devices[device].profiles << Profile{name, source ? source->bindings : BindingMap()};
+    m_devices[device].profiles << (source ? Profile{name, source->bindings, source->hypershift} : Profile{name, {}, {}});
     return true;
 }
 

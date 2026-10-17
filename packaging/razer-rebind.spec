@@ -39,6 +39,7 @@ access to Razer input devices and /dev/uinput, which the remapper needs.
 
 %check
 desktop-file-validate %{buildroot}%{_datadir}/applications/%{name}.desktop
+%ctest
 
 %post
 %udev_rules_update

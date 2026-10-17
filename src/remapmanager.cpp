@@ -206,13 +206,13 @@ void RemapManager::applyProfile()
 {
     for (Remapper *r : std::as_const(m_remappers)) {
         const DeviceProfile p = m_config->device(r->device().profileKey);
-        r->setBindings(p.bindings);
+        r->setProfile(p);
         r->setHotkeys(m_config->hotkeys);
         // Only take a device away from the system when there is something to
-        // do with it: a binding, or a hotkey it can trigger.
+        // do with it: a binding (in either layer), or a hotkey it can trigger.
         const bool hotkeyHere = std::any_of(m_config->hotkeys.cbegin(), m_config->hotkeys.cend(),
                                             [r](const Hotkey &h) { return r->canProduce(h.code); });
-        r->setActive(m_config->remappingEnabled && p.enabled && (!p.bindings.isEmpty() || hotkeyHere));
+        r->setActive(m_config->remappingEnabled && p.enabled && (!p.bindings.isEmpty() || !p.hypershift.isEmpty() || hotkeyHere));
     }
     emit stateChanged();
 }

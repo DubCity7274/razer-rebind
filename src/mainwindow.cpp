@@ -10,6 +10,7 @@
 #include "settingsdialog.h"
 
 #include <QActionGroup>
+#include <QButtonGroup>
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
@@ -124,6 +125,42 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
     header->addLayout(profileRow, 0, 1, Qt::AlignRight);
     header->addWidget(m_details, 1, 0, 1, 2);
     header->addWidget(m_state, 2, 0, 1, 2);
+
+    // Which layer the picture and the list edit.
+    m_layerNormal = new QPushButton(tr("Normal"));
+    m_layerHypershift = new QPushButton(tr("Hypershift"));
+    m_layerHypershift->setToolTip(tr("Bindings used while a Hypershift key is held"));
+    auto *layerGroup = new QButtonGroup(this);
+    for (QPushButton *b : {m_layerNormal, m_layerHypershift}) {
+        b->setCheckable(true);
+        b->setAutoDefault(false);
+        layerGroup->addButton(b);
+    }
+    m_layerNormal->setChecked(true);
+    // A segmented control: the selected layer is filled solid, Normal in the
+    // accent colour and Hypershift in the purple used for Hypershift keys.
+    const QString segment = QStringLiteral(
+        "QPushButton { padding: 4px 14px; border: 1px solid palette(mid); background: palette(button); }"
+        "QPushButton:hover:!checked { background: palette(midlight); }"
+        "QPushButton:checked { color: white; font-weight: bold; border-color: %1; background: %1; }");
+    m_layerNormal->setStyleSheet(segment.arg(QStringLiteral("palette(highlight)"))
+                                 + QStringLiteral("QPushButton { border-top-left-radius: 4px; border-bottom-left-radius: 4px; }"));
+    m_layerHypershift->setStyleSheet(segment.arg(QStringLiteral("#965adc"))
+                                     + QStringLiteral("QPushButton { border-left: none; border-top-right-radius: 4px;"
+                                                      " border-bottom-right-radius: 4px; }"));
+    connect(m_layerHypershift, &QPushButton::toggled, this, &MainWindow::setHypershiftLayer);
+    m_layerHint = new QLabel;
+    m_layerHint->setWordWrap(true);
+    m_layerHint->setStyleSheet(QStringLiteral("color: palette(placeholder-text);"));
+    auto *layerRow = new QHBoxLayout;
+    layerRow->setSpacing(0);
+    layerRow->addWidget(new QLabel(tr("Layer:")));
+    layerRow->addSpacing(8);
+    layerRow->addWidget(m_layerNormal);
+    layerRow->addWidget(m_layerHypershift);
+    layerRow->addSpacing(12);
+    layerRow->addWidget(m_layerHint, 1);
+    header->addLayout(layerRow, 3, 0, 1, 2);
 
     m_keyboardView = new KeyboardView;
     m_mouseView = new MouseView;
@@ -510,7 +547,7 @@ void MainWindow::refreshState()
                    .arg(error.toHtmlEscaped(), tr("how to fix permissions"));
     } else if (r->isGrabbed()) {
         html = tr("<span style='color:#2a2'>● Remapping active</span> — %n binding(s) applied", nullptr,
-                  int(p.bindings.size()));
+                  int(p.bindings.size() + p.hypershift.size()));
     } else if (r->isWaitingForRelease()) {
         html = tr("Waiting for all keys and buttons to be released before taking over the device…");
     } else if (!m_manager->remappingEnabled()) {
@@ -523,26 +560,70 @@ void MainWindow::refreshState()
     m_state->setText(html);
 }
 
+void MainWindow::setHypershiftLayer(bool on)
+{
+    m_hypershiftLayer = on;
+    // Bound keys take the selected layer's colour, so the picture shows
+    // which layer is being edited.
+    for (DeviceView *v : {m_keyboardView, m_mouseView})
+        v->setAccent(on ? QColor(0x96, 0x5a, 0xdc) : QColor());
+    refreshBindings();
+}
+
+QString MainWindow::hypershiftKeysText() const
+{
+    // Hypershift keys of every device's active profile, since any of them
+    // switches every device.
+    QStringList keys;
+    for (const QString &device : m_config->deviceKeys()) {
+        const BindingMap bindings = m_config->device(device).bindings;
+        QList<int> codes;
+        for (auto it = bindings.cbegin(); it != bindings.cend(); ++it)
+            if (it->isHypershift())
+                codes << it.key();
+        std::sort(codes.begin(), codes.end());
+        for (int code : codes)
+            keys << tr("%1 (%2)").arg(Keys::label(code), shortDeviceName(device));
+    }
+    return keys.join(tr(" or "));
+}
+
 void MainWindow::refreshBindings()
 {
     const RazerDevice *dev = current();
-    const BindingMap bindings = dev ? m_config->device(dev->profileKey).bindings : BindingMap();
+    const DeviceProfile p = dev ? m_config->device(dev->profileKey) : DeviceProfile();
+    const BindingMap &bindings = m_hypershiftLayer ? p.hypershift : p.bindings;
+    const BindingMap fallback = m_hypershiftLayer ? p.bindings : BindingMap();
 
-    m_keyboardView->setBindings(dev && dev->kind == RazerDevice::Keyboard ? bindings : BindingMap());
-    m_mouseView->setBindings(dev && dev->kind == RazerDevice::Mouse ? bindings : BindingMap());
+    m_keyboardView->setBindings(dev && dev->kind == RazerDevice::Keyboard ? bindings : BindingMap(),
+                                dev && dev->kind == RazerDevice::Keyboard ? fallback : BindingMap());
+    m_mouseView->setBindings(dev && dev->kind == RazerDevice::Mouse ? bindings : BindingMap(),
+                             dev && dev->kind == RazerDevice::Mouse ? fallback : BindingMap());
+
+    const QString keys = hypershiftKeysText();
+    if (!m_hypershiftLayer)
+        m_layerHint->setText(keys.isEmpty() ? QString() : tr("Hypershift: hold %1").arg(keys));
+    else if (keys.isEmpty())
+        m_layerHint->setText(tr("No Hypershift key yet. In the Normal layer, bind a key or button to "
+                                "“Hypershift”; holding it then switches every device to these bindings."));
+    else
+        m_layerHint->setText(tr("Used while %1 is held. Keys without a binding here keep their Normal one.").arg(keys));
 
     QList<int> sources = bindings.keys();
     std::sort(sources.begin(), sources.end());
     m_table->setRowCount(0);
     for (int src : sources) {
+        const Binding &b = bindings[src];
         const int row = m_table->rowCount();
         m_table->insertRow(row);
         auto *in = new QTableWidgetItem(Keys::label(src));
         in->setData(Qt::UserRole, src);
         in->setToolTip(Keys::name(src));
-        auto *out = new QTableWidgetItem(Keys::comboLabel(bindings.value(src)));
-        if (bindings.value(src).isEmpty())
+        auto *out = new QTableWidgetItem(b.isHypershift() ? tr("Hypershift (hold)") : Keys::bindingLabel(b));
+        if (b.targets.isEmpty())
             out->setForeground(QColor(0xd3, 0x44, 0x44));
+        else if (b.isHypershift())
+            out->setForeground(QColor(0x96, 0x5a, 0xdc));
         m_table->setItem(row, 0, in);
         m_table->setItem(row, 1, out);
     }
@@ -558,16 +639,17 @@ void MainWindow::editBinding(int sourceCode)
     if (!dev)
         return;
     const RazerDevice device = *dev; // the list may change while the dialog is open
-    const BindingMap bindings = m_config->device(device.profileKey).bindings;
+    const DeviceProfile p = m_config->device(device.profileKey);
+    const BindingMap bindings = m_hypershiftLayer ? p.hypershift : p.bindings;
 
-    BindingDialog dlg(m_manager, device, this);
+    BindingDialog dlg(m_manager, device, m_hypershiftLayer, this);
     if (sourceCode > 0) {
         dlg.setSource(sourceCode);
         // An unbound key starts out mapped to itself, the natural starting point.
         if (bindings.contains(sourceCode))
-            dlg.setTargets(bindings.value(sourceCode));
+            dlg.setBinding(bindings.value(sourceCode));
         else if (Keys::isValidTarget(sourceCode))
-            dlg.setTargets({sourceCode});
+            dlg.setBinding(Binding{{sourceCode}, 0});
     }
     if (dlg.exec() != QDialog::Accepted)
         return;
@@ -578,22 +660,25 @@ void MainWindow::editBinding(int sourceCode)
                                  tr("%1 already has a binding. Replace it?").arg(Keys::label(src)))
                != QMessageBox::Yes)
         return;
-    storeBinding(sourceCode, src, dlg.targets());
+    storeBinding(sourceCode, src, dlg.binding());
 }
 
-void MainWindow::storeBinding(int oldSource, int source, const QList<int> &targets)
+void MainWindow::storeBinding(int oldSource, int source, const Binding &binding)
 {
     const RazerDevice *dev = current();
     if (!dev)
         return;
     DeviceProfile p = m_config->device(dev->profileKey);
+    BindingMap &bindings = m_hypershiftLayer ? p.hypershift : p.bindings;
     if (oldSource > 0)
-        p.bindings.remove(oldSource);
-    // Mapping a key to exactly itself is the same as having no binding.
-    if (targets == QList<int>{source})
-        p.bindings.remove(source);
+        bindings.remove(oldSource);
+    // Mapping a key to exactly itself is the same as having no binding,
+    // unless it overrides a Normal binding in the Hypershift layer.
+    const bool identity = binding == Binding{{source}, 0};
+    if (identity && !(m_hypershiftLayer && p.bindings.contains(source)))
+        bindings.remove(source);
     else
-        p.bindings.insert(source, targets);
+        bindings.insert(source, binding);
     m_config->setDevice(dev->profileKey, p);
     saveProfile();
 }
@@ -605,7 +690,7 @@ void MainWindow::removeSelectedBinding()
     if (!dev || !item)
         return;
     DeviceProfile p = m_config->device(dev->profileKey);
-    p.bindings.remove(item->data(Qt::UserRole).toInt());
+    (m_hypershiftLayer ? p.hypershift : p.bindings).remove(item->data(Qt::UserRole).toInt());
     m_config->setDevice(dev->profileKey, p);
     saveProfile();
 }
@@ -615,12 +700,13 @@ void MainWindow::clearBindings()
     const RazerDevice *dev = current();
     if (!dev)
         return;
-    if (QMessageBox::question(this, tr("Clear all bindings"),
-                              tr("Remove every binding for the %1?").arg(dev->profileKey))
-        != QMessageBox::Yes)
+    const QString question = m_hypershiftLayer ? tr("Remove every Hypershift binding for the %1?")
+                                               : tr("Remove every Normal binding for the %1? Its Hypershift "
+                                                    "bindings are kept.");
+    if (QMessageBox::question(this, tr("Clear all bindings"), question.arg(dev->profileKey)) != QMessageBox::Yes)
         return;
     DeviceProfile p = m_config->device(dev->profileKey);
-    p.bindings.clear();
+    (m_hypershiftLayer ? p.hypershift : p.bindings).clear();
     m_config->setDevice(dev->profileKey, p);
     saveProfile();
 }

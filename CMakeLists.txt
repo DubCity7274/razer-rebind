@@ -38,6 +38,16 @@ target_include_directories(razer-rebind PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/gene
 target_compile_definitions(razer-rebind PRIVATE RAZER_REBIND_VERSION="${PROJECT_VERSION}")
 target_link_libraries(razer-rebind PRIVATE Qt6::Widgets Qt6::Network Qt6::DBus PkgConfig::LIBEVDEV Threads::Threads)
 
+# Tests need no hardware: ctest --test-dir build
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(remapper_test tests/remapper_test.cpp
+        src/remapper.cpp src/keys.cpp src/config.cpp src/razerdevice.cpp)
+    target_include_directories(remapper_test PRIVATE src)
+    target_link_libraries(remapper_test PRIVATE Qt6::Core Qt6::DBus PkgConfig::LIBEVDEV Threads::Threads)
+    add_test(NAME remapper COMMAND remapper_test)
+endif()
+
 include(GNUInstallDirs)
 configure_file(data/razer-rebind.service.in razer-rebind.service @ONLY)
 install(TARGETS razer-rebind RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

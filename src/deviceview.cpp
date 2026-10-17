@@ -35,9 +35,30 @@ DeviceView::DeviceView(QWidget *parent)
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 }
 
-void DeviceView::setBindings(const BindingMap &bindings)
+void DeviceView::setBindings(const BindingMap &bindings, const BindingMap &fallback)
 {
     m_bindings = bindings;
+    m_fallback = fallback;
+    update();
+}
+
+const Binding *DeviceView::bindingFor(int code, bool *inherited) const
+{
+    if (inherited)
+        *inherited = false;
+    if (auto it = m_bindings.constFind(code); it != m_bindings.constEnd())
+        return &*it;
+    if (auto it = m_fallback.constFind(code); it != m_fallback.constEnd()) {
+        if (inherited)
+            *inherited = true;
+        return &*it;
+    }
+    return nullptr;
+}
+
+void DeviceView::setAccent(const QColor &accent)
+{
+    m_accent = accent;
     update();
 }
 
@@ -103,22 +124,26 @@ void DeviceView::paintEvent(QPaintEvent *)
     const QPalette pal = palette();
     const QColor base = pal.color(QPalette::Button);
     const QColor text = pal.color(QPalette::ButtonText);
-    const QColor accent = pal.color(QPalette::Highlight);
+    const QColor accent = this->accent();
     const QColor disabledTint(210, 70, 70);
+    const QColor hypershiftTint(150, 90, 220);
 
     QFont labelFont = font();
     QFont bindFont = font();
 
     for (int i = 0; i < m_regions.size(); ++i) {
         const Region &r = m_regions[i];
-        const auto binding = m_bindings.constFind(r.code);
-        const bool bound = r.code > 0 && binding != m_bindings.constEnd();
-        const bool disabled = bound && binding->isEmpty();
+        bool inherited = false;
+        const Binding *binding = r.code > 0 ? bindingFor(r.code, &inherited) : nullptr;
+        const bool bound = binding != nullptr;
+        const bool disabled = bound && binding->targets.isEmpty();
 
         QColor fill = base;
         if (r.code == 0)
             fill = mix(base, pal.color(QPalette::Window), 0.6);
-        else if (bound)
+        else if (bound && binding->isHypershift())
+            fill = mix(base, hypershiftTint, inherited ? 0.25 : 0.45);
+        else if (bound && !inherited)
             fill = mix(base, disabled ? disabledTint : accent, 0.45);
         if (i == m_hover)
             fill = fill.lighter(118);
@@ -141,10 +166,12 @@ void DeviceView::paintEvent(QPaintEvent *)
         p.drawText(box, (showBinding ? Qt::AlignTop : Qt::AlignVCenter) | Qt::AlignHCenter | Qt::TextWordWrap, r.label);
         if (showBinding) {
             bindFont.setPixelSize(std::max(7, int(unit * textScale() * 0.2)));
-            bindFont.setBold(true);
+            bindFont.setBold(!inherited);
             p.setFont(bindFont);
+            if (inherited && !m_pressed.contains(r.code))
+                p.setPen(mix(text, base, 0.45));
             const QString out = QFontMetrics(bindFont).elidedText(
-                QStringLiteral("→ ") + Keys::comboLabel(*binding), Qt::ElideRight, int(box.width()));
+                QStringLiteral("→ ") + Keys::bindingLabel(*binding, true), Qt::ElideRight, int(box.width()));
             p.drawText(box, Qt::AlignBottom | Qt::AlignHCenter, out);
         }
         p.restore();
@@ -189,8 +216,10 @@ bool DeviceView::event(QEvent *e)
         }
         const int code = m_regions[i].code;
         QString tip = QStringLiteral("<b>%1</b> <code>%2</code>").arg(Keys::label(code), Keys::name(code));
-        if (auto b = m_bindings.constFind(code); b != m_bindings.constEnd())
-            tip += QStringLiteral("<br>→ ") + Keys::comboLabel(*b).toHtmlEscaped();
+        bool inherited = false;
+        if (const Binding *b = bindingFor(code, &inherited))
+            tip += QStringLiteral("<br>→ ") + Keys::bindingLabel(*b).toHtmlEscaped()
+                   + (inherited ? tr(" (from the Normal layer; click to override)") : QString());
         else
             tip += tr("<br>Click to rebind");
         QToolTip::showText(he->globalPos(), tip, this);
@@ -351,13 +380,14 @@ void MouseView::paintOverlay(QPainter &p) const
         p.setPen(QPen(pal.color(QPalette::Mid), 1, Qt::DotLine));
         p.drawLine(anchor, edge);
 
-        const auto b = bindings().constFind(c.code);
+        bool inherited = false;
+        const Binding *b = bindingFor(c.code, &inherited);
         p.setPen(pal.color(QPalette::WindowText));
         p.setFont(nameFont);
         p.drawText(box, c.align | Qt::AlignTop, c.name);
         p.setFont(bindFont);
-        p.setPen(b != bindings().constEnd() ? pal.color(QPalette::Highlight) : pal.color(QPalette::PlaceholderText));
-        const QString text = b != bindings().constEnd() ? QStringLiteral("→ ") + Keys::comboLabel(*b) : tr("default");
+        p.setPen(b && !inherited ? accent() : pal.color(QPalette::PlaceholderText));
+        const QString text = b ? QStringLiteral("→ ") + Keys::bindingLabel(*b) : tr("default");
         p.drawText(box, c.align | Qt::AlignBottom,
                    QFontMetrics(bindFont).elidedText(text, Qt::ElideRight, int(box.width())));
     }

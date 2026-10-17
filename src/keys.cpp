@@ -13,6 +13,8 @@ QString name(int code)
         return QStringLiteral("WHEEL_UP");
     if (code == WheelDown)
         return QStringLiteral("WHEEL_DOWN");
+    if (code == Hypershift)
+        return QStringLiteral("HYPERSHIFT");
     if (const char *n = libevdev_event_code_get_name(EV_KEY, code))
         return QString::fromLatin1(n);
     return QStringLiteral("KEY_%1").arg(code);
@@ -24,6 +26,8 @@ int fromName(const QString &name)
         return WheelUp;
     if (name == QLatin1String("WHEEL_DOWN"))
         return WheelDown;
+    if (name == QLatin1String("HYPERSHIFT"))
+        return Hypershift;
     const int code = libevdev_event_code_from_name(EV_KEY, name.toLatin1().constData());
     if (code >= 0)
         return code;
@@ -72,6 +76,8 @@ static const QHash<int, QString> &prettyNames()
 
 QString label(int code)
 {
+    if (code == Hypershift)
+        return QStringLiteral("Hypershift");
     const auto &pretty = prettyNames();
     if (auto it = pretty.constFind(code); it != pretty.constEnd())
         return it.value();
@@ -92,6 +98,14 @@ QString comboLabel(const QList<int> &codes)
     for (int c : codes)
         parts << label(c);
     return parts.join(QStringLiteral(" + "));
+}
+
+QString bindingLabel(const Binding &binding, bool compact)
+{
+    QString text = comboLabel(binding.targets);
+    if (binding.turbo > 0 && !binding.targets.isEmpty())
+        text += (compact ? QStringLiteral(" ×%1/s") : QStringLiteral(" · turbo %1/s")).arg(binding.turbo);
+    return text;
 }
 
 bool isModifier(int code)
@@ -124,6 +138,11 @@ bool isValidTarget(int code)
 bool isValidSource(int code)
 {
     return code == WheelUp || code == WheelDown || inRange(code, 1, KEY_MAX);
+}
+
+bool isWheel(int code)
+{
+    return code == WheelUp || code == WheelDown;
 }
 
 QList<int> targetCodes()

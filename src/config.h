@@ -14,6 +14,11 @@ struct DeviceProfile
 {
     bool enabled = true;
     BindingMap bindings;
+    // Used instead while any Hypershift key is held (on any device); keys
+    // without a binding here fall back to `bindings`.
+    BindingMap hypershift;
+
+    bool hasHypershiftKey() const;
 };
 
 // A global shortcut handled by the remapper itself, so it works on any desktop
@@ -83,6 +88,7 @@ private:
     {
         QString name;
         BindingMap bindings;
+        BindingMap hypershift;
     };
     struct DeviceSettings
     {

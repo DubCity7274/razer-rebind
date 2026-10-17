@@ -1,5 +1,6 @@
 #pragma once
 
+#include "keys.h"
 #include "razerdevice.h"
 
 #include <QComboBox>
@@ -10,6 +11,7 @@
 class QCheckBox;
 class QLabel;
 class QRadioButton;
+class QSpinBox;
 class InputDetector;
 class RemapManager;
 
@@ -53,22 +55,28 @@ class BindingDialog : public QDialog
 {
     Q_OBJECT
 public:
-    BindingDialog(RemapManager *manager, const RazerDevice &device, QWidget *parent = nullptr);
+    // `hypershiftLayer`: editing the Hypershift layer, where a key can't
+    // itself be a Hypershift key.
+    BindingDialog(RemapManager *manager, const RazerDevice &device, bool hypershiftLayer, QWidget *parent = nullptr);
 
     void setSource(int code);
-    void setTargets(const QList<int> &targets);
+    void setBinding(const Binding &binding);
     int source() const;
-    QList<int> targets() const;
+    Binding binding() const;
 
     void accept() override;
 
 private:
+    QList<int> targets() const;
     void updateState();
 
     KeyPicker *m_source;
     QPushButton *m_detect;
     QRadioButton *m_remap;
     QRadioButton *m_disable;
+    QRadioButton *m_hypershift;
+    QCheckBox *m_turbo;
+    QSpinBox *m_turboRate;
     QCheckBox *m_ctrl;
     QCheckBox *m_shift;
     QCheckBox *m_alt;

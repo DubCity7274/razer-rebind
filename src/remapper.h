@@ -34,7 +34,8 @@ public:
     bool start(QString *error);
     void stop();
 
-    void setBindings(const BindingMap &bindings);
+    // Bindings and Hypershift layer of the active profile.
+    void setProfile(const DeviceProfile &profile);
     void setHotkeys(const QList<Hotkey> &hotkeys);
     // Whether any of the device's nodes can report this key, button or wheel code.
     bool canProduce(int code) const { return m_capabilities.contains(code); }
@@ -73,8 +74,13 @@ private:
     void syn();
     void press(int code);
     void release(int code);
+    void pressAll(const QList<int> &targets);
+    void releaseAll(const QList<int> &targets);
     void tap(const QList<int> &targets);
-    QList<int> lookup(int code, bool *bound);
+    Binding lookup(int code, bool *bound);
+    void startTurbo(int source, const Binding &binding);
+    void runTurbo();
+    long nextTurboTimeout() const; // nanoseconds until the next turbo edge, -1 if none
     bool matchHotkey(int code, bool trigger);
     void trackModifier(int code, bool pressed);
     void releaseModifiers();
@@ -86,6 +92,7 @@ private:
 
     std::mutex m_bindingsMutex;
     BindingMap m_bindings;
+    BindingMap m_hypershift;
     QList<Hotkey> m_hotkeys;
     QSet<int> m_capabilities; // written before the thread starts
 
@@ -99,4 +106,13 @@ private:
     QHash<int, int> m_outputCount;     // output code -> number of sources holding it
     QHash<int, QList<int>> m_held;     // source code -> outputs it pressed
     QSet<int> m_heldModifiers;         // physical modifier keys down on this device
+
+    struct Turbo
+    {
+        QList<int> targets;
+        qint64 halfPeriod = 0; // ns; the outputs are down for half of each period
+        qint64 next = 0;       // monotonic ns of the next press or release
+        bool down = false;
+    };
+    QHash<int, Turbo> m_turbo; // source code -> repeating binding while held
 };

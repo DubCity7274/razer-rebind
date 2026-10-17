@@ -8,6 +8,11 @@ drivers, runs on X11 and Wayland, and needs no root once installed.
   mouse picture, or press it on the device. Send another key, a mouse button,
   a shortcut such as Ctrl + C, or nothing at all. The scroll wheel can be
   rebound too, and a mouse button can type a shortcut.
+- **Hypershift:** hold a key or button you choose to give every device a
+  second set of bindings, like Razer Synapse's Hypershift. Hold a mouse side
+  button and your keyboard keys do something else.
+- **Turbo:** a key or button repeats as long as you hold it, from 1 to 50
+  presses per second.
 - **Profiles per device:** keep separate sets of bindings, such as
   "Desktop", "Gaming" and "Editing", for each device. Switch the keyboard
   without touching the mouse, or switch everything at once.
@@ -130,11 +135,38 @@ After installing, start **Razer Rebind** from your application menu.
 2. Click a key or button on the picture. You can also click **Add binding…**
    and press **Detect** to press the key on the device itself.
 3. Choose what it should do: another key, a shortcut (tick the modifiers or
-   use **Record shortcut**), or **Do nothing**.
+   use **Record shortcut**), **Do nothing**, or **Hypershift**. Tick
+   **Turbo** to make it repeat while held.
 
 Bound keys are highlighted, and keys light up while you hold them. Bindings
 are saved and applied immediately. **Ctrl+E** turns all remapping off and
 on; when it's off, your devices behave exactly as if the app weren't running.
+
+### Hypershift
+
+Hypershift gives every device a second layer of bindings that is used while
+you hold a Hypershift key.
+
+1. In the **Normal** layer, bind a key or button to **Hypershift**, for
+   example Caps Lock or a mouse side button.
+2. Switch the **Layer** to **Hypershift** and bind keys there as usual. Keys
+   you don't bind in this layer keep their Normal binding; they're shown
+   dimmed.
+
+A Hypershift key works for all devices: holding a mouse button switches the
+keyboard to its Hypershift layer too. Each device has its own Hypershift
+layer in each profile. The Hypershift key itself sends nothing. A key you
+press while holding it stays bound to its Hypershift action until you
+release that key, even if you let go of Hypershift first.
+
+### Turbo
+
+Tick **Turbo** in a binding to repeat it for as long as you hold the input,
+at 1 to 50 presses per second. Each repeat holds the key down for half the
+interval, so games that check key state once per frame see every press. To
+make a key repeat itself, bind it to itself with turbo on. Turbo works in
+the Hypershift layer too. The scroll wheel can't use turbo or Hypershift,
+since a notch can't be held.
 
 ### Profiles
 
@@ -282,8 +314,8 @@ Razer Rebind makes no network connections. Your settings stay in
   buttons send the same signals as the left-hand ones, so each pair is
   rebound together. **Detect** shows what your mouse actually sends.
 - **One-to-one bindings:** one input sends one key or shortcut. There are no
-  layers or timed macros, and profiles don't switch automatically when you
-  change applications.
+  timed macros, and profiles don't switch automatically when you change
+  applications.
 - **One remapper per device:** don't use another input remapper
   (input-remapper, keyd, kmonad) on the same device; only one program can
   take it over. Razer Rebind shows an error if it can't.
@@ -294,7 +326,9 @@ Settings are saved to `~/.config/razer-rebind/bindings.json` whenever you
 change something. The file can also be edited by hand while the app isn't
 running. Keys use Linux input names such as `KEY_CAPSLOCK` and `BTN_SIDE`;
 `WHEEL_UP` and `WHEEL_DOWN` are the scroll wheel, and an empty list disables
-an input.
+an input. `["HYPERSHIFT"]` makes a key a Hypershift key, a profile's
+`hypershift` object holds its Hypershift layer, and a binding with turbo is
+written as `{ "keys": [...], "turbo": 15 }`.
 
 ```json
 {
@@ -307,7 +341,11 @@ an input.
       "activeProfile": "Gaming",
       "profiles": [
         { "name": "Desktop", "bindings": { "KEY_CAPSLOCK": ["KEY_ESC"] } },
-        { "name": "Gaming", "bindings": { "KEY_LEFTMETA": [] } }
+        {
+          "name": "Gaming",
+          "bindings": { "KEY_LEFTMETA": [], "KEY_CAPSLOCK": ["HYPERSHIFT"] },
+          "hypershift": { "KEY_W": ["KEY_UP"], "KEY_F": { "keys": ["KEY_F"], "turbo": 15 } }
+        }
       ]
     },
     {

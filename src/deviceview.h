@@ -7,7 +7,9 @@
 #include <QWidget>
 
 // Clickable picture of a device. Keys that have a binding are tinted and show
-// their output; keys light up while physically held.
+// their output; keys light up while physically held. When editing the
+// Hypershift layer, `fallback` holds the normal bindings, shown dimmed on
+// keys the layer leaves alone.
 class DeviceView : public QWidget
 {
     Q_OBJECT
@@ -15,7 +17,9 @@ class DeviceView : public QWidget
 public:
     explicit DeviceView(QWidget *parent = nullptr);
 
-    void setBindings(const BindingMap &bindings);
+    void setBindings(const BindingMap &bindings, const BindingMap &fallback = {});
+    // Tint for bound keys; invalid = the palette's highlight colour.
+    void setAccent(const QColor &accent);
     void setPressed(int code, bool pressed);
     void clearPressed();
 
@@ -38,7 +42,10 @@ protected:
     virtual void paintOverlay(QPainter &) const {}
     virtual qreal textScale() const { return 1.0; }
 
-    const BindingMap &bindings() const { return m_bindings; }
+    // The binding shown for a key: its own, else the fallback one (then
+    // *inherited is set), else null.
+    const Binding *bindingFor(int code, bool *inherited = nullptr) const;
+    QColor accent() const { return m_accent.isValid() ? m_accent : palette().color(QPalette::Highlight); }
 
     void paintEvent(QPaintEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
@@ -53,6 +60,8 @@ private:
 
     mutable QVector<Region> m_regions;
     BindingMap m_bindings;
+    BindingMap m_fallback;
+    QColor m_accent;
     QSet<int> m_pressed;
     int m_hover = -1;
 };

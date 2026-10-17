@@ -15,6 +15,7 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QRadioButton>
+#include <QSpinBox>
 #include <QVBoxLayout>
 
 #include <linux/input-event-codes.h>
@@ -131,10 +132,12 @@ void KeyRecorder::focusOutEvent(QFocusEvent *e)
 
 // --- BindingDialog ----------------------------------------------------------
 
-BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, QWidget *parent)
+BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, bool hypershiftLayer,
+                             QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(tr("Edit binding — %1").arg(device.profileKey));
+    setWindowTitle(hypershiftLayer ? tr("Edit Hypershift binding — %1").arg(device.profileKey)
+                                   : tr("Edit binding — %1").arg(device.profileKey));
 
     // Input
     m_source = new KeyPicker(Keys::sourceCodes(), false);
@@ -143,13 +146,23 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, Q
     auto *inputRow = new QHBoxLayout;
     inputRow->addWidget(m_source, 1);
     inputRow->addWidget(m_detect);
-    auto *inputBox = new QGroupBox(tr("When this is pressed on the %1").arg(device.profileKey));
+    auto *inputBox = new QGroupBox(hypershiftLayer
+                                       ? tr("When this is pressed on the %1 while Hypershift is held").arg(device.profileKey)
+                                       : tr("When this is pressed on the %1").arg(device.profileKey));
     inputBox->setLayout(inputRow);
 
     // Output
     m_remap = new QRadioButton(tr("Send key or shortcut"));
     m_disable = new QRadioButton(tr("Do nothing (disable)"));
+    m_hypershift = new QRadioButton(tr("Hypershift: while held, all devices use their Hypershift bindings"));
+    m_hypershift->setVisible(!hypershiftLayer);
     m_remap->setChecked(true);
+    m_turbo = new QCheckBox(tr("Turbo: repeat while held"));
+    m_turbo->setToolTip(tr("Press and release the output over and over for as long as the input is held"));
+    m_turboRate = new QSpinBox;
+    m_turboRate->setRange(Keys::TurboMin, Keys::TurboMax);
+    m_turboRate->setValue(Keys::TurboDefault);
+    m_turboRate->setSuffix(tr(" per second"));
     m_ctrl = new QCheckBox(tr("Ctrl"));
     m_shift = new QCheckBox(tr("Shift"));
     m_alt = new QCheckBox(tr("Alt"));
@@ -163,6 +176,8 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, Q
     modRow->addWidget(new QLabel(QStringLiteral("+")));
     modRow->addWidget(m_key, 1);
     auto *recordRow = new QHBoxLayout;
+    recordRow->addWidget(m_turbo);
+    recordRow->addWidget(m_turboRate);
     recordRow->addStretch();
     recordRow->addWidget(m_record);
 
@@ -174,6 +189,7 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, Q
     indent->addLayout(recordRow);
     outLayout->addLayout(indent);
     outLayout->addWidget(m_disable);
+    outLayout->addWidget(m_hypershift);
     auto *outputBox = new QGroupBox(tr("Do this instead"));
     outputBox->setLayout(outLayout);
 
@@ -194,9 +210,14 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, Q
 
     connect(m_source, &KeyPicker::codeChanged, this, &BindingDialog::updateState);
     connect(m_key, &KeyPicker::codeChanged, this, &BindingDialog::updateState);
-    for (QAbstractButton *b : std::initializer_list<QAbstractButton *>{m_remap, m_disable, m_ctrl, m_shift, m_alt, m_super})
+    for (QAbstractButton *b : std::initializer_list<QAbstractButton *>{m_remap, m_disable, m_hypershift, m_ctrl, m_shift, m_alt, m_super, m_turbo})
         connect(b, &QAbstractButton::toggled, this, &BindingDialog::updateState);
-    connect(m_record, &KeyRecorder::recorded, this, [this](const QList<int> &codes) { setTargets(codes); });
+    connect(m_turboRate, &QSpinBox::valueChanged, this, &BindingDialog::updateState);
+    connect(m_record, &KeyRecorder::recorded, this, [this](const QList<int> &codes) {
+        Binding b = binding();
+        b.targets = codes;
+        setBinding(b);
+    });
     // Detecting on the keyboard swallows typing into the dialog (Enter would
     // accept it); on the mouse it swallows clicks, and Esc cancels.
     const bool keyboard = device.kind == RazerDevice::Keyboard;
@@ -216,9 +237,17 @@ void BindingDialog::setSource(int code)
     updateState();
 }
 
-void BindingDialog::setTargets(const QList<int> &targets)
+void BindingDialog::setBinding(const Binding &binding)
 {
-    if (targets.isEmpty()) {
+    const QList<int> &targets = binding.targets;
+    m_turbo->setChecked(binding.turbo > 0);
+    if (binding.turbo > 0)
+        m_turboRate->setValue(binding.turbo);
+    if (binding.isHypershift() && !m_hypershift->isHidden()) {
+        m_hypershift->setChecked(true);
+        return;
+    }
+    if (targets.isEmpty() || binding.isHypershift()) {
         m_disable->setChecked(true);
         return;
     }
@@ -240,9 +269,22 @@ int BindingDialog::source() const
     return m_source->code();
 }
 
+Binding BindingDialog::binding() const
+{
+    Binding b;
+    if (m_hypershift->isChecked()) {
+        b.targets = {Keys::Hypershift};
+        return b;
+    }
+    b.targets = targets();
+    if (m_remap->isChecked() && m_turbo->isChecked() && !Keys::isWheel(source()))
+        b.turbo = m_turboRate->value();
+    return b;
+}
+
 QList<int> BindingDialog::targets() const
 {
-    if (m_disable->isChecked())
+    if (!m_remap->isChecked())
         return {};
     QList<int> out;
     if (m_ctrl->isChecked()) out << KEY_LEFTCTRL;
@@ -257,20 +299,29 @@ QList<int> BindingDialog::targets() const
 
 void BindingDialog::updateState()
 {
+    const int src = source();
+    // A wheel notch can't be held, so it can't repeat or hold a layer.
+    const bool wheel = Keys::isWheel(src);
+    if (wheel && m_hypershift->isChecked())
+        m_remap->setChecked(true);
+    m_hypershift->setEnabled(!wheel);
     const bool remap = m_remap->isChecked();
     for (QWidget *w : std::initializer_list<QWidget *>{m_ctrl, m_shift, m_alt, m_super, m_key, m_record})
         w->setEnabled(remap);
+    m_turbo->setEnabled(remap && !wheel);
+    m_turboRate->setEnabled(remap && !wheel && m_turbo->isChecked());
 
-    const int src = source();
     const QList<int> out = targets();
     QString left = src > 0 ? Keys::label(src).toHtmlEscaped() : tr("<i>choose an input</i>");
     QString right;
-    if (!remap)
+    if (m_hypershift->isChecked())
+        right = tr("<span style='color:#96e'>Hypershift while held</span>");
+    else if (!remap)
         right = tr("<span style='color:#c44'>nothing</span>");
     else if (out.isEmpty() || m_key->code() < 0)
         right = tr("<i>choose a key</i>");
     else
-        right = Keys::comboLabel(out).toHtmlEscaped();
+        right = Keys::bindingLabel(binding()).toHtmlEscaped();
     m_preview->setText(QStringLiteral("<b>%1</b> &nbsp;→&nbsp; <b>%2</b>").arg(left, right));
 }
 

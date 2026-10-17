@@ -26,6 +26,12 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 ./build/razer-rebind
 ```
 
+Run the tests (no Razer hardware needed):
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
 Running it needs the udev rule from `data/`. udev only reads rules from
 `/etc` and `/usr`, so install it explicitly (the RPM does this for you):
 
@@ -85,6 +91,11 @@ builds on the current machine.
    net. Without it, remapped input can lag by a millisecond when every CPU
    core is busy.
 
+Hypershift and turbo also live in the worker threads. A shared counter of
+held Hypershift keys makes every device look up its Hypershift layer first.
+Turbo keys are timed with `ppoll()` timeouts and pulse their outputs at the
+chosen rate, each press held for half the interval.
+
 Hotkeys are matched inside the worker threads. Modifier state is shared
 between devices, so Ctrl on the keyboard combines with a mouse button. A
 local socket in the user's runtime directory lets
@@ -99,7 +110,7 @@ are polled once a minute on a background thread.
 | Path | Purpose |
 |---|---|
 | `src/razerdevice.*` | Device discovery through the OpenRazer sysfs tree |
-| `src/remapper.*` | Per-device worker thread: grab, remap, hotkeys, uinput output, LED forwarding |
+| `src/remapper.*` | Per-device worker thread: grab, remap, Hypershift, turbo, hotkeys, uinput output, LED forwarding |
 | `src/remapmanager.*` | Owns the remappers, follows hotplug, applies the active profile, runs hotkey actions, command socket, notifications |
 | `src/config.*` | Per-device profiles, hotkeys, settings; JSON storage and migration |
 | `src/batterymonitor.*` | Battery polling through OpenRazer and low battery alerts |
@@ -111,6 +122,7 @@ are polled once a minute on a background thread.
 | `src/hotkeydialog.*` | Hotkey list and editor |
 | `src/inputdetector.*` | "Press it on the device" detection used by both editors |
 | `src/mainwindow.*` | Main window, profiles UI and tray |
+| `tests/` | Remapper test with stubbed evdev and uinput |
 | `data/` | udev rule, desktop entry, icon, systemd user service |
 | `packaging/` | RPM spec, Debian maintainer scripts, tarball installer, and the build scripts |
 

@@ -3,7 +3,9 @@
 #include <QDBusConnection>
 #include <QDBusMessage>
 
+#include <algorithm>
 #include <cstdlib>
+#include <limits>
 
 #include <libevdev/libevdev-uinput.h>
 #include <libevdev/libevdev.h>
@@ -16,6 +18,7 @@
 #include <sched.h>
 #include <sys/ioctl.h>
 #include <sys/resource.h>
+#include <time.h>
 #include <unistd.h>
 
 namespace {
@@ -40,6 +43,17 @@ unsigned heldModifierMask()
 }
 
 int modifierIndex(unsigned bit) { return __builtin_ctz(bit); }
+
+// Hypershift keys held across all Razer devices: holding one on the mouse
+// switches the keyboard to its Hypershift layer too.
+std::atomic<int> g_hypershiftHeld{0};
+
+qint64 monotonicNs()
+{
+    timespec ts;
+    ::clock_gettime(CLOCK_MONOTONIC, &ts);
+    return qint64(ts.tv_sec) * 1000000000 + ts.tv_nsec;
+}
 
 // Under heavy CPU load (a game, shader compilation) an ordinary thread can wait
 // a millisecond or more for its turn, delaying input. Ask for a modest
@@ -144,10 +158,11 @@ void Remapper::stop()
     }
 }
 
-void Remapper::setBindings(const BindingMap &bindings)
+void Remapper::setProfile(const DeviceProfile &profile)
 {
     std::lock_guard lock(m_bindingsMutex);
-    m_bindings = bindings;
+    m_bindings = profile.bindings;
+    m_hypershift = profile.hypershift;
 }
 
 void Remapper::setHotkeys(const QList<Hotkey> &hotkeys)
@@ -206,7 +221,13 @@ void Remapper::run()
         if (m_uinput)
             pfds.push_back({libevdev_uinput_get_fd(m_uinput), POLLIN, 0});
 
-        const int rc = ::poll(pfds.data(), pfds.size(), m_pendingGrab ? 30 : -1);
+        // Wake up for the next turbo press or release, or every 30 ms while
+        // waiting to grab.
+        long timeout = nextTurboTimeout();
+        if (m_pendingGrab && (timeout < 0 || timeout > 30000000))
+            timeout = 30000000;
+        timespec ts{timeout / 1000000000, timeout % 1000000000};
+        const int rc = ::ppoll(pfds.data(), pfds.size(), timeout >= 0 ? &ts : nullptr, nullptr);
         if (rc < 0) {
             if (errno == EINTR)
                 continue;
@@ -228,6 +249,7 @@ void Remapper::run()
 
         if (m_uinput && pfds.size() > m_sources.size() + 1 && (pfds.back().revents & POLLIN))
             forwardLeds();
+        runTurbo();
     }
 
     m_pendingGrab = false;
@@ -278,12 +300,17 @@ void Remapper::ungrab()
 {
     if (!m_grabbed)
         return;
-    // Never leave anything pressed on the virtual device.
+    // Never leave anything pressed on the virtual device, or a Hypershift
+    // layer switched on for the other devices.
     for (auto it = m_outputCount.cbegin(); it != m_outputCount.cend(); ++it)
         write(EV_KEY, it.key(), 0);
     syn();
     m_outputCount.clear();
+    for (const QList<int> &targets : std::as_const(m_held))
+        if (targets == QList<int>{Keys::Hypershift})
+            --g_hypershiftHeld;
     m_held.clear();
+    m_turbo.clear();
 
     for (const Source &s : m_sources)
         ::ioctl(s.fd, EVIOCGRAB, 0);
@@ -350,12 +377,19 @@ bool Remapper::readSource(const Source &src)
     }
 }
 
-QList<int> Remapper::lookup(int code, bool *bound)
+Binding Remapper::lookup(int code, bool *bound)
 {
     std::lock_guard lock(m_bindingsMutex);
+    if (g_hypershiftHeld.load() > 0) {
+        const auto it = m_hypershift.constFind(code);
+        if (it != m_hypershift.constEnd()) {
+            *bound = true;
+            return it.value();
+        }
+    }
     const auto it = m_bindings.constFind(code);
     *bound = it != m_bindings.constEnd();
-    return *bound ? it.value() : QList<int>();
+    return *bound ? it.value() : Binding();
 }
 
 void Remapper::handleEvent(const input_event &ev)
@@ -378,27 +412,33 @@ void Remapper::handleEvent(const input_event &ev)
 
         if (ev.value == 1) {
             bool bound = false;
-            QList<int> targets = lookup(ev.code, &bound);
+            Binding b = lookup(ev.code, &bound);
             if (!bound)
-                targets = {ev.code};
-            m_held.insert(ev.code, targets);
-            for (int t : targets) {
-                press(t);
-                if (targets.size() > 1)
-                    syn(); // let modifiers register before the key they modify
-            }
+                b.targets = {ev.code};
+            m_held.insert(ev.code, b.targets);
+            if (b.isHypershift())
+                ++g_hypershiftHeld;
+            else if (b.turbo > 0 && !b.targets.isEmpty())
+                startTurbo(ev.code, b);
+            else
+                pressAll(b.targets);
         } else if (ev.value == 0) {
             // Release exactly what this key pressed, even if its binding has
             // changed while it was held.
             const QList<int> targets = m_held.take(ev.code);
-            for (auto it = targets.crbegin(); it != targets.crend(); ++it) {
-                release(*it);
-                if (targets.size() > 1)
-                    syn();
+            if (targets == QList<int>{Keys::Hypershift}) {
+                --g_hypershiftHeld;
+            } else if (auto t = m_turbo.find(ev.code); t != m_turbo.end()) {
+                if (t->down)
+                    releaseAll(t->targets);
+                m_turbo.erase(t);
+            } else {
+                releaseAll(targets);
             }
         } else if (ev.value == 2) {
+            // Key repeat: pass it on for plain bindings. Turbo makes its own.
             const QList<int> targets = m_held.value(ev.code);
-            if (!targets.isEmpty())
+            if (!targets.isEmpty() && targets.last() != Keys::Hypershift && !m_turbo.contains(ev.code))
                 write(EV_KEY, targets.last(), 2);
         }
         return;
@@ -435,16 +475,17 @@ void Remapper::handleWheel(const input_event &ev)
         return;
 
     bool bound = false;
-    const QList<int> targets = lookup(pseudo, &bound);
+    const Binding b = lookup(pseudo, &bound);
     if (!bound) {
         write(EV_REL, ev.code, ev.value);
         return;
     }
     // The kernel reports each notch twice (REL_WHEEL and the high-resolution
-    // REL_WHEEL_HI_RES); act on the classic one and swallow both.
-    if (ev.code == REL_WHEEL)
+    // REL_WHEEL_HI_RES); act on the classic one and swallow both. A notch
+    // can't be held, so Hypershift and turbo don't apply.
+    if (ev.code == REL_WHEEL && !b.isHypershift())
         for (int i = 0; i < std::abs(ev.value); ++i)
-            tap(targets);
+            tap(b.targets);
 }
 
 void Remapper::forwardLeds()
@@ -498,6 +539,24 @@ void Remapper::release(int code)
     }
 }
 
+void Remapper::pressAll(const QList<int> &targets)
+{
+    for (int t : targets) {
+        press(t);
+        if (targets.size() > 1)
+            syn(); // let modifiers register before the key they modify
+    }
+}
+
+void Remapper::releaseAll(const QList<int> &targets)
+{
+    for (auto it = targets.crbegin(); it != targets.crend(); ++it) {
+        release(*it);
+        if (targets.size() > 1)
+            syn();
+    }
+}
+
 void Remapper::tap(const QList<int> &targets)
 {
     for (int t : targets) {
@@ -508,6 +567,53 @@ void Remapper::tap(const QList<int> &targets)
         release(*it);
         syn();
     }
+}
+
+void Remapper::startTurbo(int source, const Binding &binding)
+{
+    // Press right away, then alternate: down for half of each period, up for
+    // the other half. Games that sample key state once per frame see every
+    // press, unlike instant taps.
+    Turbo t;
+    t.targets = binding.targets;
+    t.halfPeriod = 500000000 / std::clamp(binding.turbo, Keys::TurboMin, Keys::TurboMax);
+    t.next = monotonicNs() + t.halfPeriod;
+    t.down = true;
+    pressAll(t.targets);
+    m_turbo.insert(source, t);
+}
+
+void Remapper::runTurbo()
+{
+    if (m_turbo.isEmpty())
+        return;
+    const qint64 now = monotonicNs();
+    bool changed = false;
+    for (Turbo &t : m_turbo) {
+        if (t.next > now)
+            continue;
+        if (t.down)
+            releaseAll(t.targets);
+        else
+            pressAll(t.targets);
+        t.down = !t.down;
+        t.next += t.halfPeriod;
+        if (t.next <= now) // fell behind (suspend, long stall): don't burst to catch up
+            t.next = now + t.halfPeriod;
+        changed = true;
+    }
+    if (changed)
+        syn();
+}
+
+long Remapper::nextTurboTimeout() const
+{
+    if (m_turbo.isEmpty())
+        return -1;
+    qint64 next = std::numeric_limits<qint64>::max();
+    for (const Turbo &t : m_turbo)
+        next = std::min(next, t.next);
+    return long(std::max<qint64>(0, next - monotonicNs()));
 }
 
 bool Remapper::matchHotkey(int code, bool trigger)
