@@ -2,7 +2,19 @@
 # Prints the GitHub release text for a version: its CHANGELOG.md section and
 # a guide to the downloads. Fails if CHANGELOG.md has no entry for it.
 #   ./packaging/release-notes.sh 0.5.0
+#
+# GitHub renders every newline in a release as a line break, so lines that
+# are wrapped for reading in the editor are joined back into paragraphs.
 set -eu
+
+unwrap() {
+    awk '
+        function flush() { if (line != "") print line; line = "" }
+        /^[[:space:]]*$/ { flush(); print ""; next }
+        /^(#|- |\||[0-9]+\. )/ { flush(); line = $0; next }
+        { sub(/^[[:space:]]+/, ""); line = (line == "") ? $0 : line " " $0 }
+        END { flush() }'
+}
 version=$1
 root=$(dirname "$0")/..
 
@@ -14,6 +26,7 @@ if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
     exit 1
 fi
 
+{
 printf '%s\n' "$notes"
 cat <<NOTES
 
@@ -33,3 +46,4 @@ All of them need the OpenRazer kernel modules. See the
 [README](https://github.com/DubCity7274/razer-rebind#installation) for install
 steps. \`SHA256SUMS\` lists the checksum of every file.
 NOTES
+} | unwrap
