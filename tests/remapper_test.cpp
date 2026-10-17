@@ -435,6 +435,40 @@ int main(int argc, char **argv)
         CHECK(loaded.device(m).sensor == p.sensor);
     }
 
+    // Export and import: everything comes back, under a free name, without
+    // programs another profile already has.
+    {
+        Config c;
+        c.load(dir.filePath(QStringLiteral("share.json")), nullptr);
+        const QString k = QStringLiteral("kbd");
+        c.ensureDevice(k);
+        DeviceProfile th = kp;
+        th.bindings.insert(KEY_CAPSLOCK, Binding{{KEY_ESC}, 0, {KEY_LEFTCTRL}, 350});
+        c.setDevice(k, th);
+        c.setPrograms(k, QStringLiteral("Default"), {QStringLiteral("game.exe"), QStringLiteral("other")});
+        const QByteArray file = c.exportProfile(k, QStringLiteral("Default"));
+        CHECK(!file.isEmpty());
+
+        QString name, from, error;
+        CHECK(Config::readProfileFile(file, &name, &from, &error));
+        CHECK(name == QStringLiteral("Default") && from == k);
+        CHECK(!Config::readProfileFile("{\"version\": 3}", nullptr, nullptr, &error) && !error.isEmpty());
+        CHECK(!Config::readProfileFile("not json", nullptr, nullptr, &error));
+
+        const QString added = c.importProfile(k, file, &error);
+        CHECK(added == QStringLiteral("Default (2)"));
+        CHECK(c.setActiveProfile(k, added));
+        CHECK(c.device(k).bindings == th.bindings);
+        CHECK(c.device(k).hypershift == th.hypershift);
+        CHECK(c.programs(k, added).isEmpty()); // still linked to "Default"
+        CHECK(c.importProfile(k, file, &error) == QStringLiteral("Default (3)"));
+
+        // On a device without those programs they come along.
+        CHECK(c.importProfile(QStringLiteral("other kbd"), file, &error) == QStringLiteral("Default (2)"));
+        CHECK(c.programs(QStringLiteral("other kbd"), QStringLiteral("Default (2)"))
+              == (QStringList{QStringLiteral("game.exe"), QStringLiteral("other")}));
+    }
+
     if (g_failures)
         std::fprintf(stderr, "%d check(s) failed\n", g_failures);
     else

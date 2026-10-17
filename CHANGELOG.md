@@ -11,6 +11,9 @@
   quick Caps Lock + C gives Ctrl + C; letting go first, as in fast typing,
   stays a tap. The hold time is 200 ms by default and can be changed per
   binding.
+- **Import and export profiles.** **Manage → Export this profile…** saves a
+  profile (bindings, Hypershift layer, DPI and linked programs) to a file to
+  back up or share; **Import profile…** adds one to the selected device.
 
 ## 0.7.0 (2026-10-17)
 

@@ -4,6 +4,7 @@
 #include "sensor.h"
 
 #include <QHash>
+#include <QJsonObject>
 #include <QList>
 #include <QMap>
 #include <QString>
@@ -100,6 +101,16 @@ public:
     // A new profile starts with `copyFrom`'s bindings, if given, and with the
     // sensor settings of `copyFrom` or the active profile.
     bool addProfile(const QString &device, const QString &name, const QString &copyFrom = {});
+
+    // A profile as a file to share or back up: its bindings, Hypershift
+    // layer, sensor settings and programs.
+    QByteArray exportProfile(const QString &device, const QString &name) const;
+    // Checks a profile file and tells its profile name and the device it was
+    // made for.
+    static bool readProfileFile(const QByteArray &data, QString *name, QString *fromDevice, QString *error);
+    // Adds the file's profile to the device under a free name, which it
+    // returns; empty on error.
+    QString importProfile(const QString &device, const QByteArray &data, QString *error);
     bool renameProfile(const QString &device, const QString &from, const QString &to);
     bool removeProfile(const QString &device, const QString &name);
 
@@ -120,6 +131,8 @@ private:
         QList<Profile> profiles;
     };
 
+    static Profile profileFromJson(const QJsonObject &o);
+    static QJsonObject profileToJson(const Profile &p);
     const Profile *findProfile(const QString &device, const QString &name) const;
     bool anyDeviceHasProfile(const QString &name) const;
 

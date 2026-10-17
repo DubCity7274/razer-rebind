@@ -214,13 +214,7 @@ bool Config::load(const QString &path, QString *error)
                 const QString name = p.value(QStringLiteral("name")).toString().trimmed();
                 if (name.isEmpty() || findProfile(key, name))
                     continue;
-                QStringList programs;
-                for (const QJsonValue &v : p.value(QStringLiteral("programs")).toArray())
-                    if (const QString prog = v.toString().trimmed(); !prog.isEmpty() && !programs.contains(prog))
-                        programs << prog;
-                ds.profiles << Profile{name, bindingsFromJson(p.value(QStringLiteral("bindings")).toObject()),
-                                       bindingsFromJson(p.value(QStringLiteral("hypershift")).toObject()), programs,
-                                       sensorFromJson(p.value(QStringLiteral("sensor")).toObject())};
+                ds.profiles << profileFromJson(p);
             }
         }
     } else if (version == 2) {
@@ -294,16 +288,8 @@ bool Config::save(QString *error) const
     for (const QString &key : m_deviceOrder) {
         const DeviceSettings &ds = m_devices[key];
         QJsonArray profiles;
-        for (const Profile &p : ds.profiles) {
-            QJsonObject o{{QStringLiteral("name"), p.name}, {QStringLiteral("bindings"), bindingsToJson(p.bindings)}};
-            if (!p.hypershift.isEmpty())
-                o.insert(QStringLiteral("hypershift"), bindingsToJson(p.hypershift));
-            if (!p.programs.isEmpty())
-                o.insert(QStringLiteral("programs"), QJsonArray::fromStringList(p.programs));
-            if (p.sensor.isValid())
-                o.insert(QStringLiteral("sensor"), sensorToJson(p.sensor));
-            profiles.append(o);
-        }
+        for (const Profile &p : ds.profiles)
+            profiles.append(profileToJson(p));
         QJsonObject d{{QStringLiteral("name"), key},
                       {QStringLiteral("enabled"), ds.enabled},
                       {QStringLiteral("activeProfile"), ds.active},
@@ -355,6 +341,89 @@ bool Config::save(QString *error) const
         return false;
     }
     return true;
+}
+
+Config::Profile Config::profileFromJson(const QJsonObject &p)
+{
+    QStringList programs;
+    for (const QJsonValue &v : p.value(QStringLiteral("programs")).toArray())
+        if (const QString prog = v.toString().trimmed(); !prog.isEmpty() && !programs.contains(prog))
+            programs << prog;
+    return Profile{p.value(QStringLiteral("name")).toString().trimmed(),
+                   bindingsFromJson(p.value(QStringLiteral("bindings")).toObject()),
+                   bindingsFromJson(p.value(QStringLiteral("hypershift")).toObject()), programs,
+                   sensorFromJson(p.value(QStringLiteral("sensor")).toObject())};
+}
+
+QJsonObject Config::profileToJson(const Profile &p)
+{
+    QJsonObject o{{QStringLiteral("name"), p.name}, {QStringLiteral("bindings"), bindingsToJson(p.bindings)}};
+    if (!p.hypershift.isEmpty())
+        o.insert(QStringLiteral("hypershift"), bindingsToJson(p.hypershift));
+    if (!p.programs.isEmpty())
+        o.insert(QStringLiteral("programs"), QJsonArray::fromStringList(p.programs));
+    if (p.sensor.isValid())
+        o.insert(QStringLiteral("sensor"), sensorToJson(p.sensor));
+    return o;
+}
+
+QByteArray Config::exportProfile(const QString &device, const QString &name) const
+{
+    const Profile *p = findProfile(device, name);
+    if (!p)
+        return {};
+    const QJsonObject root{{QStringLiteral("razerRebind"), QStringLiteral("profile")},
+                           {QStringLiteral("version"), 1},
+                           {QStringLiteral("device"), device},
+                           {QStringLiteral("profile"), profileToJson(*p)}};
+    return QJsonDocument(root).toJson(QJsonDocument::Indented);
+}
+
+bool Config::readProfileFile(const QByteArray &data, QString *name, QString *fromDevice, QString *error)
+{
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
+    const QJsonObject root = doc.object();
+    if (!doc.isObject() || root.value(QStringLiteral("razerRebind")).toString() != QLatin1String("profile")) {
+        if (error)
+            *error = doc.isObject() ? QCoreApplication::translate("Config", "This isn't a Razer Rebind profile file.")
+                                    : parseError.errorString();
+        return false;
+    }
+    if (name)
+        *name = root.value(QStringLiteral("profile")).toObject().value(QStringLiteral("name")).toString().trimmed();
+    if (fromDevice)
+        *fromDevice = root.value(QStringLiteral("device")).toString();
+    return true;
+}
+
+QString Config::importProfile(const QString &device, const QByteArray &data, QString *error)
+{
+    if (!readProfileFile(data, nullptr, nullptr, error))
+        return {};
+    ensureDevice(device);
+    Profile p = profileFromJson(QJsonDocument::fromJson(data).object().value(QStringLiteral("profile")).toObject());
+    if (p.name.isEmpty())
+        p.name = QCoreApplication::translate("Config", "Imported");
+    // "Gaming" -> "Gaming (2)" if the device already has one.
+    const QString base = p.name;
+    for (int n = 2; findProfile(device, p.name); ++n)
+        p.name = QStringLiteral("%1 (%2)").arg(base).arg(n);
+    // A program can switch a device to only one profile: keep existing links.
+    p.programs.erase(std::remove_if(p.programs.begin(), p.programs.end(),
+                                    [&](const QString &prog) {
+                                        for (const Profile &other : m_devices.value(device).profiles)
+                                            if (other.programs.contains(prog, Qt::CaseInsensitive))
+                                                return true;
+                                        return false;
+                                    }),
+                     p.programs.end());
+    // Without saved DPI, switching to it shouldn't change the mouse.
+    if (!p.sensor.isValid())
+        if (const Profile *active = findProfile(device, activeProfile(device)))
+            p.sensor = active->sensor;
+    m_devices[device].profiles << p;
+    return p.name;
 }
 
 bool Config::ensureDevice(const QString &device)

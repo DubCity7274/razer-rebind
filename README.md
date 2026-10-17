@@ -199,6 +199,12 @@ switch your keyboard to "Gaming" while the mouse stays on "Desktop". Use the
 create, duplicate, rename or delete that device's profiles. Edits always
 apply to the device's active profile.
 
+**Manage → Export this profile…** saves the profile to a file, to back it up
+or share it; **Import profile…** adds one to the selected device as a new
+profile and switches to it. A file holds the profile's bindings, Hypershift
+layer, DPI and linked programs (programs another profile already uses are
+left out on import).
+
 Give profiles on different devices the same name to switch them together:
 the **Profiles** menu (and the tray menu) lists every device's profiles, plus
 an **All devices** section that switches every device that has a profile of

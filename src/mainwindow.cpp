@@ -18,6 +18,9 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
+#include <QFile>
+#include <QFileDialog>
+#include <QStandardPaths>
 #include <QInputDialog>
 #include <QCloseEvent>
 #include <QGridLayout>
@@ -805,6 +808,9 @@ void MainWindow::refreshProfiles()
     m_deviceProfileMenu->addAction(tr("Rename this profile…"), this, &MainWindow::renameProfile);
     QAction *del = m_deviceProfileMenu->addAction(tr("Delete this profile…"), this, &MainWindow::deleteProfile);
     del->setEnabled(m_config->profileNames(key).size() > 1);
+    m_deviceProfileMenu->addSeparator();
+    m_deviceProfileMenu->addAction(tr("Export this profile…"), this, &MainWindow::exportProfile);
+    m_deviceProfileMenu->addAction(tr("Import profile…"), this, &MainWindow::importProfile);
     m_deviceProfileMenu->setEnabled(dev != nullptr);
 
     refreshAutoInfo();
@@ -955,4 +961,65 @@ void MainWindow::refreshAutoInfo()
                             + (m_config->autoSwitch ? QString() : tr(" (turned off in Settings)")) + link);
     else
         m_autoInfo->clear();
+}
+
+void MainWindow::exportProfile()
+{
+    const RazerDevice *dev = current();
+    if (!dev)
+        return;
+    const QString device = dev->profileKey;
+    const QString profile = m_config->activeProfile(device);
+    QString suggested = QStringLiteral("%1 - %2.json").arg(shortDeviceName(device), profile);
+    suggested.replace(QLatin1Char('/'), QLatin1Char('-'));
+    const QString path = QFileDialog::getSaveFileName(
+        this, tr("Export profile"),
+        QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).filePath(suggested),
+        tr("Razer Rebind profiles (*.json)"));
+    if (path.isEmpty())
+        return;
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly) || f.write(m_config->exportProfile(device, profile)) < 0) {
+        QMessageBox::warning(this, tr("Export profile"), tr("Could not write %1: %2").arg(path, f.errorString()));
+        return;
+    }
+    statusBar()->showMessage(tr("Exported “%1” to %2").arg(profile, path), 8000);
+}
+
+void MainWindow::importProfile()
+{
+    const RazerDevice *dev = current();
+    if (!dev)
+        return;
+    const QString device = dev->profileKey;
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Import profile"), QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
+        tr("Razer Rebind profiles (*.json)"));
+    if (path.isEmpty())
+        return;
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, tr("Import profile"), tr("Could not read %1: %2").arg(path, f.errorString()));
+        return;
+    }
+    const QByteArray data = f.readAll();
+    QString name, from, error;
+    if (!Config::readProfileFile(data, &name, &from, &error)) {
+        QMessageBox::warning(this, tr("Import profile"), error);
+        return;
+    }
+    // Key codes mean the same on every device, but a keyboard's profile on a
+    // mouse binds keys the mouse doesn't have.
+    if (!from.isEmpty() && from != device
+        && QMessageBox::question(this, tr("Import profile"),
+                                 tr("“%1” was made for the %2. Import it for the %3 anyway?").arg(name, from, device))
+               != QMessageBox::Yes)
+        return;
+    const QString added = m_config->importProfile(device, data, &error);
+    if (added.isEmpty()) {
+        QMessageBox::warning(this, tr("Import profile"), error);
+        return;
+    }
+    m_manager->switchProfile(device, added); // saves
+    statusBar()->showMessage(tr("Imported “%1” for the %2").arg(added, device), 8000);
 }

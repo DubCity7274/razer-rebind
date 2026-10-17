@@ -57,6 +57,8 @@ private:
     void newProfile(bool duplicate);
     void renameProfile();
     void deleteProfile();
+    void exportProfile();
+    void importProfile();
     void editPrograms();
     void refreshAutoInfo();
     void showHotkeys();
