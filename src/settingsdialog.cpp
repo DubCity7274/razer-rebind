@@ -74,7 +74,16 @@ SettingsDialog::SettingsDialog(Config *config, BatteryMonitor *battery, QWidget 
     connect(test, &QPushButton::clicked, m_battery, &BatteryMonitor::sendTestNotification);
     connect(m_battery, &BatteryMonitor::levelsChanged, this, &SettingsDialog::refreshLevels);
 
+    auto *tray = new QCheckBox(tr("Show the battery level on the tray icon"));
+    tray->setToolTip(tr("With several wireless devices, the emptiest one is shown"));
+    tray->setChecked(config->trayBattery);
+    connect(tray, &QCheckBox::toggled, this, [this](bool on) {
+        m_config->trayBattery = on;
+        save();
+    });
+
     auto *batteryLayout = new QVBoxLayout;
+    batteryLayout->addWidget(tray);
     batteryLayout->addWidget(alerts);
     batteryLayout->addLayout(thresholdRow);
     batteryLayout->addWidget(note);

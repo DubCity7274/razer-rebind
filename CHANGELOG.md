@@ -11,6 +11,10 @@
   quick Caps Lock + C gives Ctrl + C; letting go first, as in fast typing,
   stays a tap. The hold time is 200 ms by default and can be changed per
   binding.
+- **Battery on the tray icon.** A gauge across the tray icon shows the
+  emptiest wireless device's charge: green, amber under 40%, red at your low
+  battery alert level, with a bolt while charging. It can be turned off in
+  Settings.
 - **Import and export profiles.** **Manage → Export this profile…** saves a
   profile (bindings, Hypershift layer, DPI and linked programs) to a file to
   back up or share; **Import profile…** adds one to the selected device.

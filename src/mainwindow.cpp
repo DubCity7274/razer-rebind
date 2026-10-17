@@ -46,10 +46,12 @@
 
 #include <algorithm>
 
-QIcon appIcon(bool active)
+// The app icon; with `battery` >= 0, a battery gauge across its bottom:
+// green, amber under 40%, red at the alert level, with a bolt when charging.
+QIcon appIcon(bool active, int battery = -1, bool charging = false, int lowLevel = 20)
 {
     QIcon icon;
-    for (int size : {16, 22, 32, 48, 64, 128}) {
+    for (int size : {16, 22, 24, 32, 48, 64, 128}) {
         QPixmap pm(size, size);
         pm.fill(Qt::transparent);
         QPainter p(&pm);
@@ -67,6 +69,38 @@ QIcon appIcon(bool active)
         p.setBrush(Qt::NoBrush);
         p.drawArc(QRectF(s * 0.33, s * 0.33, s * 0.34, s * 0.34), 30 * 16, 270 * 16);
         p.drawLine(QPointF(s * 0.64, s * 0.38), QPointF(s * 0.66, s * 0.47));
+
+        if (battery >= 0) {
+            // Big enough to read at tray size (16-24 px): the bottom third.
+            const qreal border = std::max(1.0, s * 0.06);
+            const QRectF body(s * 0.02 + border / 2, s * 0.6, s * 0.86, s * 0.38);
+            const QRectF nub(body.right(), body.top() + body.height() * 0.3, s * 0.1, body.height() * 0.4);
+            p.setPen(Qt::NoPen);
+            p.setBrush(QColor(20, 20, 20));
+            p.drawRect(nub);
+            p.setPen(QPen(QColor(20, 20, 20), border));
+            p.setBrush(QColor(245, 245, 245));
+            p.drawRoundedRect(body, s * 0.05, s * 0.05);
+            const QColor fill = battery <= lowLevel ? QColor(0xe0, 0x3c, 0x31)
+                                : battery < 40      ? QColor(0xf0, 0xa0, 0x20)
+                                                    : QColor(0x2e, 0xa0, 0x43);
+            const QRectF inner = body.adjusted(border, border, -border, -border);
+            p.setPen(Qt::NoPen);
+            p.setBrush(fill);
+            p.drawRect(QRectF(inner.left(), inner.top(), inner.width() * std::clamp(battery, 4, 100) / 100.0,
+                              inner.height()));
+            if (charging) {
+                const QPointF c = inner.center();
+                const qreal w = inner.height() * 0.55, h = inner.height() * 0.5;
+                QPolygonF bolt;
+                bolt << QPointF(c.x() + w * 0.15, c.y() - h) << QPointF(c.x() - w * 0.55, c.y() + h * 0.15)
+                     << QPointF(c.x() - w * 0.05, c.y() + h * 0.15) << QPointF(c.x() - w * 0.15, c.y() + h)
+                     << QPointF(c.x() + w * 0.55, c.y() - h * 0.15) << QPointF(c.x() + w * 0.05, c.y() - h * 0.15);
+                p.setPen(QPen(QColor(20, 20, 20), std::max(0.6, s * 0.02)));
+                p.setBrush(Qt::white);
+                p.drawPolygon(bolt);
+            }
+        }
         p.end();
         icon.addPixmap(pm);
     }
@@ -268,6 +302,7 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
     connect(settingsAction, &QAction::triggered, this, [this] {
         SettingsDialog dlg(m_config, m_battery, this);
         dlg.exec();
+        refreshTrayIcon();
         m_autoSwitcher->update();
         refreshAutoInfo();
     });
@@ -375,6 +410,7 @@ void MainWindow::setupTray()
     if (!QSystemTrayIcon::isSystemTrayAvailable())
         return;
     m_tray = new QSystemTrayIcon(appIcon(m_manager->remappingEnabled()), this);
+    refreshTrayIcon();
     m_tray->setToolTip(tr("Razer Rebind"));
     auto *menu = new QMenu(this);
     menu->addAction(tr("Show window"), this, &MainWindow::showFromBackground);
@@ -536,7 +572,7 @@ void MainWindow::refreshState()
         m_toggleAction->setChecked(m_manager->remappingEnabled());
     }
     if (m_tray)
-        m_tray->setIcon(appIcon(m_manager->remappingEnabled()));
+        refreshTrayIcon();
 
     // Device list status line
     const QList<RazerDevice> devices = m_manager->devices();
@@ -1022,4 +1058,27 @@ void MainWindow::importProfile()
     }
     m_manager->switchProfile(device, added); // saves
     statusBar()->showMessage(tr("Imported “%1” for the %2").arg(added, device), 8000);
+}
+
+void MainWindow::refreshTrayIcon()
+{
+    if (!m_tray)
+        return;
+    // The emptiest wireless device is the one that needs charging.
+    int lowest = -1;
+    bool charging = false;
+    if (m_config->trayBattery)
+        for (const RazerDevice &d : m_manager->devices()) {
+            const BatteryMonitor::Level l = m_battery->level(d.hidPath);
+            if (l.percent >= 0 && (lowest < 0 || l.percent < lowest)) {
+                lowest = l.percent;
+                charging = l.charging;
+            }
+        }
+    const QString key = QStringLiteral("%1|%2|%3|%4").arg(m_manager->remappingEnabled()).arg(lowest).arg(charging)
+                            .arg(m_config->batteryThreshold);
+    if (key == m_trayIconKey)
+        return;
+    m_trayIconKey = key;
+    m_tray->setIcon(appIcon(m_manager->remappingEnabled(), lowest, charging, m_config->batteryThreshold));
 }

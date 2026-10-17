@@ -26,8 +26,9 @@ drivers, runs on X11 and Wayland, and needs no root once installed.
   and Proton games all work.
 - **Global hotkeys:** switch profiles or turn remapping off from inside a
   game, with a key combination on your Razer keyboard or mouse.
-- **Low battery alerts:** get a desktop notification when a wireless
-  device's battery drops below a level you choose.
+- **Battery at a glance:** the tray icon shows a battery gauge for your
+  wireless devices, and a desktop notification warns you when one drops
+  below a level you choose.
 - **Built for gaming:** adds about 0.015 ms of input delay, even with every
   CPU core busy (see [Performance](#performance)). Your KDE pointer settings
   keep working.
@@ -279,10 +280,12 @@ Razer Rebind checks the battery of wireless devices, such as the Viper
 Ultimate, once a minute. When one drops to the level you set (20% by
 default), you get a desktop notification, and another reminder every 5% after
 that until you plug it in. The current level is shown in the device list and
-the tray tooltip.
+the tray tooltip, and as a gauge on the tray icon: green, amber under 40%,
+red at your alert level, with a bolt while charging. With several wireless
+devices, the gauge shows the emptiest one.
 
-Change the level, turn the alerts off, or send a test notification in
-**Settings**. Alerts work in the background service too, so you don't need
+Change the level, turn the alerts or the tray gauge off, or send a test
+notification in **Settings**. Alerts work in the background service too, so you don't need
 another battery app.
 
 ### Running in the background

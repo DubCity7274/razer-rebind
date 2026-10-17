@@ -63,6 +63,7 @@ private:
     void refreshAutoInfo();
     void showHotkeys();
     void showFromBackground();
+    void refreshTrayIcon();
 
     const RazerDevice *current() const;
     DeviceView *currentView() const;
@@ -100,6 +101,7 @@ private:
     QLabel *m_profileStatus;
     QSystemTrayIcon *m_tray = nullptr;
     bool m_trayHintShown = false;
+    QString m_trayIconKey; // what the tray icon shows, to redraw only on change
 
     QHash<QString, QString> m_detailsCache;
 };

@@ -191,6 +191,7 @@ bool Config::load(const QString &path, QString *error)
     const QJsonObject battery = root.value(QStringLiteral("battery")).toObject();
     batteryAlerts = battery.value(QStringLiteral("alerts")).toBool(true);
     batteryThreshold = std::clamp(battery.value(QStringLiteral("threshold")).toInt(20), 1, 99);
+    trayBattery = battery.value(QStringLiteral("tray")).toBool(true);
     autoSwitch = root.value(QStringLiteral("autoSwitch")).toBool(true);
 
     auto addDevice = [this](const QString &key) -> DeviceSettings & {
@@ -322,7 +323,8 @@ bool Config::save(QString *error) const
         {QStringLiteral("notifications"), notifications},
         {QStringLiteral("autoSwitch"), autoSwitch},
         {QStringLiteral("battery"), QJsonObject{{QStringLiteral("alerts"), batteryAlerts},
-                                                {QStringLiteral("threshold"), batteryThreshold}}},
+                                                {QStringLiteral("threshold"), batteryThreshold},
+                                                {QStringLiteral("tray"), trayBattery}}},
         {QStringLiteral("devices"), devices},
         {QStringLiteral("hotkeys"), hotkeyArray},
     };

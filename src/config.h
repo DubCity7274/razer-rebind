@@ -64,6 +64,7 @@ public:
     bool notifications = true;   // on hotkey / command-line profile switches
     bool batteryAlerts = true;
     int batteryThreshold = 20;   // percent
+    bool trayBattery = true;     // battery gauge on the tray icon
     bool autoSwitch = true;      // switch profiles when their programs run
     QList<Hotkey> hotkeys;
 
