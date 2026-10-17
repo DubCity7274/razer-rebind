@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.6.0 (2026-10-17)
+
+### New features
+
+- **Per-game profiles.** Link programs to a profile with the **Programs…**
+  button next to it, and the device switches to that profile while one of
+  them runs, then back to the profile it had before when it exits. **Pick
+  running program…** lists what's running, newest first, so you can choose
+  the game instead of typing its name. Games running through
+  Wine or Proton (Steam, Lutris, Heroic) are matched by their `.exe` name.
+  Each device switches on its own, so the keyboard and mouse can each have a
+  profile for the same game.
+
+### Changes
+
+- A profile picked by hand while a linked game runs is kept, also after the
+  game exits.
+- A new setting turns automatic switching off, and profile-switch
+  notifications now also cover automatic switches.
+
 ## 0.5.0 (2026-10-17)
 
 ### New features

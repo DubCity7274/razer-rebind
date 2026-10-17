@@ -1,9 +1,11 @@
 #include "mainwindow.h"
 
+#include "autoswitcher.h"
 #include "batterymonitor.h"
 #include "bindingdialog.h"
 #include "deviceview.h"
 #include "hotkeydialog.h"
+#include "programsdialog.h"
 #include "config.h"
 #include "remapmanager.h"
 #include "remapper.h"
@@ -67,11 +69,13 @@ QIcon appIcon(bool active)
     return icon;
 }
 
-MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *battery, QWidget *parent)
+MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *battery, AutoSwitcher *autoSwitcher,
+                       QWidget *parent)
     : QMainWindow(parent)
     , m_config(config)
     , m_manager(manager)
     , m_battery(battery)
+    , m_autoSwitcher(autoSwitcher)
 {
     setWindowTitle(tr("Razer Rebind"));
     setWindowIcon(appIcon(true));
@@ -113,18 +117,30 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
     profileButton->setToolTip(tr("New, duplicate, rename or delete this device's profiles"));
     profileButton->setMenu(m_deviceProfileMenu);
     profileButton->setPopupMode(QToolButton::InstantPopup);
+    m_programsButton = new QPushButton(tr("Programs…"));
+    m_programsButton->setAutoDefault(false);
+    m_programsButton->setToolTip(tr("Programs that switch this device to this profile while they run"));
+    connect(m_programsButton, &QPushButton::clicked, this, &MainWindow::editPrograms);
     auto *profileRow = new QHBoxLayout;
     profileRow->addWidget(new QLabel(tr("Profile:")));
     profileRow->addWidget(m_profileCombo);
     profileRow->addWidget(profileButton);
+    profileRow->addWidget(m_programsButton);
     profileRow->addSpacing(16);
     profileRow->addWidget(m_deviceEnabled);
+
+    // Which programs switch to this profile, or which one switched to it.
+    m_autoInfo = new QLabel;
+    m_autoInfo->setTextFormat(Qt::RichText);
+    m_autoInfo->setStyleSheet(QStringLiteral("color: palette(placeholder-text);"));
+    connect(m_autoInfo, &QLabel::linkActivated, this, &MainWindow::editPrograms);
 
     auto *header = new QGridLayout;
     header->addWidget(m_title, 0, 0);
     header->addLayout(profileRow, 0, 1, Qt::AlignRight);
     header->addWidget(m_details, 1, 0, 1, 2);
-    header->addWidget(m_state, 2, 0, 1, 2);
+    header->addWidget(m_state, 2, 0);
+    header->addWidget(m_autoInfo, 2, 1, Qt::AlignRight | Qt::AlignTop);
 
     // Which layer the picture and the list edit.
     m_layerNormal = new QPushButton(tr("Normal"));
@@ -245,6 +261,8 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
     connect(settingsAction, &QAction::triggered, this, [this] {
         SettingsDialog dlg(m_config, m_battery, this);
         dlg.exec();
+        m_autoSwitcher->update();
+        refreshAutoInfo();
     });
     toolbar->addSeparator();
     toolbar->addAction(hotkeysAction);
@@ -304,6 +322,7 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
         refreshProfiles();
         selectDevice();
     });
+    connect(m_autoSwitcher, &AutoSwitcher::changed, this, &MainWindow::refreshAutoInfo);
     connect(m_manager, &RemapManager::showRequested, this, &MainWindow::showFromBackground);
     connect(m_battery, &BatteryMonitor::levelsChanged, this, [this] {
         refreshState();
@@ -782,6 +801,7 @@ void MainWindow::refreshProfiles()
     del->setEnabled(m_config->profileNames(key).size() > 1);
     m_deviceProfileMenu->setEnabled(dev != nullptr);
 
+    refreshAutoInfo();
     const QString summary = m_manager->profileSummary();
     m_profileStatus->setText(summary);
     if (m_tray) {
@@ -891,4 +911,42 @@ void MainWindow::showHotkeys()
 {
     HotkeysDialog dlg(m_manager, m_config, this);
     dlg.exec();
+}
+
+void MainWindow::editPrograms()
+{
+    const RazerDevice *dev = current();
+    if (!dev)
+        return;
+    const QString device = dev->profileKey;
+    ProgramsDialog dlg(m_config, device, m_config->activeProfile(device), this);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    QString error;
+    if (!m_config->save(&error))
+        QMessageBox::warning(this, tr("Could not save"), error);
+    m_autoSwitcher->update();
+    refreshAutoInfo();
+}
+
+void MainWindow::refreshAutoInfo()
+{
+    const RazerDevice *dev = current();
+    m_programsButton->setEnabled(dev != nullptr);
+    if (!dev) {
+        m_autoInfo->clear();
+        return;
+    }
+    const QString device = dev->profileKey;
+    const QString active = m_config->activeProfile(device);
+    const QString running = m_autoSwitcher->activeProgram(device);
+    const QStringList programs = m_config->programs(device, active);
+    const QString link = QStringLiteral(" <a href='#'>%1</a>").arg(tr("Edit"));
+    if (!running.isEmpty() && !m_config->autoRestore(device).isEmpty())
+        m_autoInfo->setText(tr("Switched automatically: %1 is running").arg(running.toHtmlEscaped()));
+    else if (!programs.isEmpty())
+        m_autoInfo->setText(tr("Switches automatically for %1").arg(programs.join(QStringLiteral(", ")).toHtmlEscaped())
+                            + (m_config->autoSwitch ? QString() : tr(" (turned off in Settings)")) + link);
+    else
+        m_autoInfo->clear();
 }

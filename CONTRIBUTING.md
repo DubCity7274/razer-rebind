@@ -96,6 +96,12 @@ held Hypershift keys makes every device look up its Hypershift layer first.
 Turbo keys are timed with `ppoll()` timeouts and pulse their outputs at the
 chosen rate, each press held for half the interval.
 
+Automatic profile switching reads `/proc` every two seconds for the user's
+processes. A process is known by argv[0] (which holds the Windows path for
+Wine and Proton games), its executable and its kernel name. Before switching,
+the device's previous profile is saved to the config as `autoRestore`, so a
+restart in the middle of a game still switches back afterwards.
+
 Hotkeys are matched inside the worker threads. Modifier state is shared
 between devices, so Ctrl on the keyboard combines with a mouse button. A
 local socket in the user's runtime directory lets
@@ -113,6 +119,9 @@ are polled once a minute on a background thread.
 | `src/remapper.*` | Per-device worker thread: grab, remap, Hypershift, turbo, hotkeys, uinput output, LED forwarding |
 | `src/remapmanager.*` | Owns the remappers, follows hotplug, applies the active profile, runs hotkey actions, command socket, notifications |
 | `src/config.*` | Per-device profiles, hotkeys, settings; JSON storage and migration |
+| `src/processes.*` | The user's running programs, read from `/proc` |
+| `src/autoswitcher.*` | Switches profiles while their linked programs run |
+| `src/programsdialog.*` | Editor for a profile's programs, with a running-program picker |
 | `src/batterymonitor.*` | Battery polling through OpenRazer and low battery alerts |
 | `src/notifications.*` | Desktop notifications over `org.freedesktop.Notifications` |
 | `src/settingsdialog.*` | Notification and battery settings |
@@ -122,7 +131,7 @@ are polled once a minute on a background thread.
 | `src/hotkeydialog.*` | Hotkey list and editor |
 | `src/inputdetector.*` | "Press it on the device" detection used by both editors |
 | `src/mainwindow.*` | Main window, profiles UI and tray |
-| `tests/` | Remapper test with stubbed evdev and uinput |
+| `tests/` | Remapper test with stubbed evdev and uinput; auto-switch test with stand-in processes |
 | `data/` | udev rule, desktop entry, icon, systemd user service |
 | `packaging/` | RPM spec, Debian maintainer scripts, tarball installer, and the build scripts |
 

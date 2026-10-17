@@ -22,13 +22,21 @@ SettingsDialog::SettingsDialog(Config *config, BatteryMonitor *battery, QWidget 
     setWindowTitle(tr("Settings"));
 
     // Profile switching
-    auto *profileNotes = new QCheckBox(tr("Show a notification when a hotkey or command switches profile"));
+    auto *autoSwitch = new QCheckBox(tr("Switch profiles automatically while their programs run"));
+    autoSwitch->setToolTip(tr("Link programs to a profile with the Programs… button next to it"));
+    autoSwitch->setChecked(config->autoSwitch);
+    connect(autoSwitch, &QCheckBox::toggled, this, [this](bool on) {
+        m_config->autoSwitch = on;
+        save();
+    });
+    auto *profileNotes = new QCheckBox(tr("Show a notification when a hotkey, command or program switches profile"));
     profileNotes->setChecked(config->notifications);
     connect(profileNotes, &QCheckBox::toggled, this, [this](bool on) {
         m_config->notifications = on;
         save();
     });
     auto *profileLayout = new QVBoxLayout;
+    profileLayout->addWidget(autoSwitch);
     profileLayout->addWidget(profileNotes);
     auto *profileBox = new QGroupBox(tr("Profiles"));
     profileBox->setLayout(profileLayout);

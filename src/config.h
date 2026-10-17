@@ -60,6 +60,7 @@ public:
     bool notifications = true;   // on hotkey / command-line profile switches
     bool batteryAlerts = true;
     int batteryThreshold = 20;   // percent
+    bool autoSwitch = true;      // switch profiles when their programs run
     QList<Hotkey> hotkeys;
 
     // Devices that have settings, in a stable order. ensureDevice() adds one
@@ -79,6 +80,16 @@ public:
     // Profile names across all devices, in first-seen order.
     QStringList allProfileNames() const;
 
+    // Programs that switch the device to this profile while they run, as
+    // executable names ("cs2", "eldenring.exe").
+    QStringList programs(const QString &device, const QString &profile) const;
+    void setPrograms(const QString &device, const QString &profile, const QStringList &programs);
+    // The profile to go back to when the program that switched the device
+    // automatically exits; empty when it wasn't switched automatically. Saved,
+    // so a restart in the middle of a game still switches back.
+    QString autoRestore(const QString &device) const { return m_devices.value(device).autoRestore; }
+    void setAutoRestore(const QString &device, const QString &profile);
+
     bool addProfile(const QString &device, const QString &name, const QString &copyFrom = {});
     bool renameProfile(const QString &device, const QString &from, const QString &to);
     bool removeProfile(const QString &device, const QString &name);
@@ -89,11 +100,13 @@ private:
         QString name;
         BindingMap bindings;
         BindingMap hypershift;
+        QStringList programs;
     };
     struct DeviceSettings
     {
         bool enabled = true;
         QString active;
+        QString autoRestore;
         QList<Profile> profiles;
     };
 

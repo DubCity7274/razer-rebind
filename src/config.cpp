@@ -142,6 +142,7 @@ bool Config::load(const QString &path, QString *error)
     const QJsonObject battery = root.value(QStringLiteral("battery")).toObject();
     batteryAlerts = battery.value(QStringLiteral("alerts")).toBool(true);
     batteryThreshold = std::clamp(battery.value(QStringLiteral("threshold")).toInt(20), 1, 99);
+    autoSwitch = root.value(QStringLiteral("autoSwitch")).toBool(true);
 
     auto addDevice = [this](const QString &key) -> DeviceSettings & {
         if (!m_devices.contains(key))
@@ -158,12 +159,18 @@ bool Config::load(const QString &path, QString *error)
             DeviceSettings &ds = addDevice(key);
             ds.enabled = d.value(QStringLiteral("enabled")).toBool(true);
             ds.active = d.value(QStringLiteral("activeProfile")).toString();
+            ds.autoRestore = d.value(QStringLiteral("autoRestore")).toString();
             for (const QJsonValue &pv : d.value(QStringLiteral("profiles")).toArray()) {
                 const QJsonObject p = pv.toObject();
                 const QString name = p.value(QStringLiteral("name")).toString().trimmed();
-                if (!name.isEmpty() && !findProfile(key, name))
-                    ds.profiles << Profile{name, bindingsFromJson(p.value(QStringLiteral("bindings")).toObject()),
-                                           bindingsFromJson(p.value(QStringLiteral("hypershift")).toObject())};
+                if (name.isEmpty() || findProfile(key, name))
+                    continue;
+                QStringList programs;
+                for (const QJsonValue &v : p.value(QStringLiteral("programs")).toArray())
+                    if (const QString prog = v.toString().trimmed(); !prog.isEmpty() && !programs.contains(prog))
+                        programs << prog;
+                ds.profiles << Profile{name, bindingsFromJson(p.value(QStringLiteral("bindings")).toObject()),
+                                       bindingsFromJson(p.value(QStringLiteral("hypershift")).toObject()), programs};
             }
         }
     } else if (version == 2) {
@@ -181,7 +188,7 @@ bool Config::load(const QString &path, QString *error)
                 const QJsonObject d = p.value(QStringLiteral("devices")).toObject().value(key).toObject();
                 if (name.isEmpty() || findProfile(key, name))
                     continue;
-                ds.profiles << Profile{name, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}};
+                ds.profiles << Profile{name, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}, {}};
                 if (name == active) {
                     ds.active = name;
                     ds.enabled = d.value(QStringLiteral("enabled")).toBool(true);
@@ -195,13 +202,13 @@ bool Config::load(const QString &path, QString *error)
             const QJsonObject d = it.value().toObject();
             DeviceSettings &ds = addDevice(it.key());
             ds.enabled = d.value(QStringLiteral("enabled")).toBool(true);
-            ds.profiles << Profile{DefaultProfile, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}};
+            ds.profiles << Profile{DefaultProfile, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}, {}};
         }
     }
 
     for (auto it = m_devices.begin(); it != m_devices.end(); ++it) {
         if (it->profiles.isEmpty())
-            it->profiles << Profile{DefaultProfile, {}, {}};
+            it->profiles << Profile{DefaultProfile, {}, {}, {}};
         if (!findProfile(it.key(), it->active))
             it->active = it->profiles.first().name;
     }
@@ -241,12 +248,17 @@ bool Config::save(QString *error) const
             QJsonObject o{{QStringLiteral("name"), p.name}, {QStringLiteral("bindings"), bindingsToJson(p.bindings)}};
             if (!p.hypershift.isEmpty())
                 o.insert(QStringLiteral("hypershift"), bindingsToJson(p.hypershift));
+            if (!p.programs.isEmpty())
+                o.insert(QStringLiteral("programs"), QJsonArray::fromStringList(p.programs));
             profiles.append(o);
         }
-        devices.append(QJsonObject{{QStringLiteral("name"), key},
-                                   {QStringLiteral("enabled"), ds.enabled},
-                                   {QStringLiteral("activeProfile"), ds.active},
-                                   {QStringLiteral("profiles"), profiles}});
+        QJsonObject d{{QStringLiteral("name"), key},
+                      {QStringLiteral("enabled"), ds.enabled},
+                      {QStringLiteral("activeProfile"), ds.active},
+                      {QStringLiteral("profiles"), profiles}};
+        if (!ds.autoRestore.isEmpty())
+            d.insert(QStringLiteral("autoRestore"), ds.autoRestore);
+        devices.append(d);
     }
 
     QJsonArray hotkeyArray;
@@ -270,6 +282,7 @@ bool Config::save(QString *error) const
         {QStringLiteral("version"), 3},
         {QStringLiteral("remappingEnabled"), remappingEnabled},
         {QStringLiteral("notifications"), notifications},
+        {QStringLiteral("autoSwitch"), autoSwitch},
         {QStringLiteral("battery"), QJsonObject{{QStringLiteral("alerts"), batteryAlerts},
                                                 {QStringLiteral("threshold"), batteryThreshold}}},
         {QStringLiteral("devices"), devices},
@@ -298,7 +311,7 @@ bool Config::ensureDevice(const QString &device)
         return false;
     m_deviceOrder << device;
     DeviceSettings &ds = m_devices[device];
-    ds.profiles << Profile{DefaultProfile, {}, {}};
+    ds.profiles << Profile{DefaultProfile, {}, {}, {}};
     ds.active = DefaultProfile;
     return true;
 }
@@ -394,13 +407,33 @@ bool Config::anyDeviceHasProfile(const QString &name) const
     return false;
 }
 
+QStringList Config::programs(const QString &device, const QString &profile) const
+{
+    const Profile *p = findProfile(device, profile);
+    return p ? p->programs : QStringList();
+}
+
+void Config::setPrograms(const QString &device, const QString &profile, const QStringList &programs)
+{
+    for (Profile &p : m_devices[device].profiles)
+        if (p.name == profile)
+            p.programs = programs;
+}
+
+void Config::setAutoRestore(const QString &device, const QString &profile)
+{
+    if (m_devices.contains(device))
+        m_devices[device].autoRestore = profile;
+}
+
 bool Config::addProfile(const QString &device, const QString &name, const QString &copyFrom)
 {
     if (name.trimmed().isEmpty() || findProfile(device, name))
         return false;
     ensureDevice(device);
     const Profile *source = findProfile(device, copyFrom);
-    m_devices[device].profiles << (source ? Profile{name, source->bindings, source->hypershift} : Profile{name, {}, {}});
+    // A copy doesn't take the programs: two profiles claiming one game would fight.
+    m_devices[device].profiles << (source ? Profile{name, source->bindings, source->hypershift, {}} : Profile{name, {}, {}, {}});
     return true;
 }
 
@@ -414,6 +447,8 @@ bool Config::renameProfile(const QString &device, const QString &from, const QSt
             p.name = to;
     if (ds.active == from)
         ds.active = to;
+    if (ds.autoRestore == from)
+        ds.autoRestore = to;
     // Hotkeys aimed at this device follow the rename; all-device hotkeys
     // follow it only once no other device uses the old name.
     const bool stillUsed = anyDeviceHasProfile(from);

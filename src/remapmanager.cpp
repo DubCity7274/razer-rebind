@@ -136,6 +136,24 @@ QString RemapManager::perform(Hotkey::Action action, const QString &profile, con
     return text;
 }
 
+void RemapManager::switchProfiles(const QHash<QString, QString> &profiles, const QString &reason, bool notifyUser)
+{
+    QStringList changed;
+    for (const QString &d : m_config->deviceKeys()) {
+        const auto it = profiles.constFind(d);
+        if (it != profiles.constEnd() && *it != m_config->activeProfile(d) && m_config->setActiveProfile(d, *it))
+            changed << QStringLiteral("%1: %2").arg(shortDeviceName(d), *it);
+    }
+    if (changed.isEmpty())
+        return;
+    m_config->save(nullptr);
+    applyProfile();
+    emit profileChanged();
+    emit message(QStringLiteral("%1 (%2)").arg(changed.join(QStringLiteral(", ")), reason));
+    if (notifyUser)
+        notify(changed.join(QLatin1Char('\n')), reason);
+}
+
 void RemapManager::rescan()
 {
     const QList<RazerDevice> found = discoverRazerDevices();

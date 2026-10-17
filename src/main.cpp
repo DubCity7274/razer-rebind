@@ -1,3 +1,4 @@
+#include "autoswitcher.h"
 #include "batterymonitor.h"
 #include "config.h"
 #include "mainwindow.h"
@@ -174,6 +175,7 @@ int main(int argc, char *argv[])
     QObject::connect(&manager, &RemapManager::message, [&err](const QString &msg) { err << msg << Qt::endl; });
     manager.listen();
     BatteryMonitor battery(&manager, &config);
+    AutoSwitcher autoSwitcher(&manager, &config);
 
     if (!gui) {
         QObject::connect(&manager, &RemapManager::devicesChanged, [&manager, &err] {
@@ -187,7 +189,7 @@ int main(int argc, char *argv[])
 
     static_cast<QApplication *>(app.get())->setQuitOnLastWindowClosed(false);
     manager.rescan();
-    MainWindow window(&config, &manager, &battery);
+    MainWindow window(&config, &manager, &battery, &autoSwitcher);
     if (!(parser.isSet(QStringLiteral("minimized")) && window.hasTray()))
         window.show();
     return app->exec();

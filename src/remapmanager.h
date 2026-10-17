@@ -34,6 +34,9 @@ public:
     // Run a hotkey action on one device, or all when `device` is empty;
     // `notify` shows a desktop notification about it.
     QString perform(Hotkey::Action action, const QString &profile, const QString &device, bool notify);
+    // Switch several devices at once (device key -> profile), with one
+    // notification that says why.
+    void switchProfiles(const QHash<QString, QString> &profiles, const QString &reason, bool notify);
 
     // Exact device key, or a unique case-insensitive part of one ("viper").
     QString resolveDevice(const QString &query, QString *error) const;

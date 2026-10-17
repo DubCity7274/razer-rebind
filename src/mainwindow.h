@@ -17,6 +17,7 @@ class QStackedWidget;
 class QSystemTrayIcon;
 class QTableWidget;
 class DeviceView;
+class AutoSwitcher;
 class BatteryMonitor;
 class Config;
 class RemapManager;
@@ -26,7 +27,8 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    MainWindow(Config *config, RemapManager *manager, BatteryMonitor *battery, QWidget *parent = nullptr);
+    MainWindow(Config *config, RemapManager *manager, BatteryMonitor *battery, AutoSwitcher *autoSwitcher,
+               QWidget *parent = nullptr);
 
     bool hasTray() const;
 
@@ -54,6 +56,8 @@ private:
     void newProfile(bool duplicate);
     void renameProfile();
     void deleteProfile();
+    void editPrograms();
+    void refreshAutoInfo();
     void showHotkeys();
     void showFromBackground();
 
@@ -63,6 +67,9 @@ private:
     Config *m_config;
     RemapManager *m_manager;
     BatteryMonitor *m_battery;
+    AutoSwitcher *m_autoSwitcher;
+    QLabel *m_autoInfo;
+    QPushButton *m_programsButton;
     QString m_currentPath; // hidPath of the selected device
 
     QListWidget *m_devices;

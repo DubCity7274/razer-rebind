@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.19)
-project(razer-rebind VERSION 0.5.0 LANGUAGES CXX)
+project(razer-rebind VERSION 0.6.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,9 +20,12 @@ qt_add_executable(razer-rebind
     src/config.cpp src/config.h
     src/notifications.cpp src/notifications.h
     src/batterymonitor.cpp src/batterymonitor.h
+    src/processes.cpp src/processes.h
+    src/autoswitcher.cpp src/autoswitcher.h
     src/settingsdialog.cpp src/settingsdialog.h
     src/inputdetector.cpp src/inputdetector.h
     src/hotkeydialog.cpp src/hotkeydialog.h
+    src/programsdialog.cpp src/programsdialog.h
     src/deviceview.cpp src/deviceview.h
     src/bindingdialog.cpp src/bindingdialog.h
     src/mainwindow.cpp src/mainwindow.h
@@ -46,6 +49,13 @@ if(BUILD_TESTING)
     target_include_directories(remapper_test PRIVATE src)
     target_link_libraries(remapper_test PRIVATE Qt6::Core Qt6::DBus PkgConfig::LIBEVDEV Threads::Threads)
     add_test(NAME remapper COMMAND remapper_test)
+
+    add_executable(autoswitch_test tests/autoswitch_test.cpp
+        src/autoswitcher.cpp src/processes.cpp src/remapmanager.cpp src/remapper.cpp
+        src/keys.cpp src/config.cpp src/razerdevice.cpp src/notifications.cpp)
+    target_include_directories(autoswitch_test PRIVATE src)
+    target_link_libraries(autoswitch_test PRIVATE Qt6::Core Qt6::Network Qt6::DBus PkgConfig::LIBEVDEV Threads::Threads)
+    add_test(NAME autoswitch COMMAND autoswitch_test)
 endif()
 
 include(GNUInstallDirs)

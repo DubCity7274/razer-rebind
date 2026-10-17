@@ -16,6 +16,9 @@ drivers, runs on X11 and Wayland, and needs no root once installed.
 - **Profiles per device:** keep separate sets of bindings, such as
   "Desktop", "Gaming" and "Editing", for each device. Switch the keyboard
   without touching the mouse, or switch everything at once.
+- **Per-game profiles:** link a game to a profile, and your devices switch
+  to it while the game runs and back when you quit. Steam, Lutris, Heroic
+  and Proton games all work.
 - **Global hotkeys:** switch profiles or turn remapping off from inside a
   game, with a key combination on your Razer keyboard or mouse.
 - **Low battery alerts:** get a desktop notification when a wireless
@@ -181,6 +184,24 @@ the **Profiles** menu (and the tray menu) lists every device's profiles, plus
 an **All devices** section that switches every device that has a profile of
 that name.
 
+### Switching profiles automatically
+
+A profile can switch on by itself while a game (or any program) runs:
+
+1. Start the game.
+2. In Razer Rebind, pick the device and the profile, then click
+   **Programs…** next to the profile.
+3. Click **Pick running program…** and choose the game. The list shows the
+   most recently started programs first. Games running through Wine or
+   Proton are listed by their `.exe` name, e.g. `eldenring.exe`.
+
+From then on, the device switches to that profile whenever the game starts,
+and back to whatever profile it had before when the game exits. Link the
+same game on the keyboard and the mouse to switch both. If several linked
+games run at once, the one started last wins. If you switch profile by hand
+while a game runs, your choice stays, also after the game exits. Programs are
+checked every two seconds; **Settings** can turn automatic switching off.
+
 ### Hotkeys
 
 Open **Hotkeys…** to set up key combinations that work in every profile and
@@ -314,8 +335,9 @@ Razer Rebind makes no network connections. Your settings stay in
   buttons send the same signals as the left-hand ones, so each pair is
   rebound together. **Detect** shows what your mouse actually sends.
 - **One-to-one bindings:** one input sends one key or shortcut. There are no
-  timed macros, and profiles don't switch automatically when you change
-  applications.
+  timed macros.
+- **Automatic switching follows running programs, not the focused window:**
+  alt-tabbing out of a game keeps its profile until you quit the game.
 - **One remapper per device:** don't use another input remapper
   (input-remapper, keyd, kmonad) on the same device; only one program can
   take it over. Razer Rebind shows an error if it can't.
@@ -328,7 +350,8 @@ running. Keys use Linux input names such as `KEY_CAPSLOCK` and `BTN_SIDE`;
 `WHEEL_UP` and `WHEEL_DOWN` are the scroll wheel, and an empty list disables
 an input. `["HYPERSHIFT"]` makes a key a Hypershift key, a profile's
 `hypershift` object holds its Hypershift layer, and a binding with turbo is
-written as `{ "keys": [...], "turbo": 15 }`.
+written as `{ "keys": [...], "turbo": 15 }`. A profile's `programs` lists the
+programs that switch to it automatically.
 
 ```json
 {
@@ -344,7 +367,8 @@ written as `{ "keys": [...], "turbo": 15 }`.
         {
           "name": "Gaming",
           "bindings": { "KEY_LEFTMETA": [], "KEY_CAPSLOCK": ["HYPERSHIFT"] },
-          "hypershift": { "KEY_W": ["KEY_UP"], "KEY_F": { "keys": ["KEY_F"], "turbo": 15 } }
+          "hypershift": { "KEY_W": ["KEY_UP"], "KEY_F": { "keys": ["KEY_F"], "turbo": 15 } },
+          "programs": ["cs2", "eldenring.exe"]
         }
       ]
     },
