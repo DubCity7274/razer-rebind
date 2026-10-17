@@ -12,9 +12,21 @@ struct Binding
     // switch to the Hypershift layer while held.
     QList<int> targets;
     int turbo = 0; // presses per second while held; 0 = off
+    // Tap vs hold: when set, `targets` is what a tap sends, and holding the
+    // input longer than holdTime ms (or pressing and releasing another key
+    // meanwhile) sends these instead, for as long as it's held.
+    QList<int> hold;
+    int holdTime = 0; // ms; 0 = Keys::HoldTimeDefault
 
     bool isHypershift() const;
-    bool operator==(const Binding &o) const { return targets == o.targets && turbo == o.turbo; }
+    bool isTapHold() const { return !hold.isEmpty(); }
+    // Whether holding this input switches to the Hypershift layer.
+    bool triggersHypershift() const;
+    int effectiveHoldTime() const;
+    bool operator==(const Binding &o) const
+    {
+        return targets == o.targets && turbo == o.turbo && hold == o.hold && effectiveHoldTime() == o.effectiveHoldTime();
+    }
 };
 
 // Source key code -> binding.
@@ -34,11 +46,17 @@ constexpr int TurboMin = 1;
 constexpr int TurboMax = 50;
 constexpr int TurboDefault = 10;
 
+// Tap vs hold: how long a press must last to count as a hold, in ms.
+constexpr int HoldTimeMin = 100;
+constexpr int HoldTimeMax = 1000;
+constexpr int HoldTimeDefault = 200;
+
 QString name(int code);              // "KEY_CAPSLOCK"
 int fromName(const QString &name);   // -1 when unknown
 QString label(int code);             // "Caps Lock"
 QString comboLabel(const QList<int> &codes);
-// "Ctrl + C · turbo 10/s", or "Ctrl + C ×10/s" when compact.
+// "Ctrl + C · turbo 10/s", "Esc · hold: L Ctrl"; compact: "Ctrl + C ×10/s",
+// "Esc / L Ctrl".
 QString bindingLabel(const Binding &binding, bool compact = false);
 
 bool isModifier(int code);
@@ -59,4 +77,14 @@ QList<int> sourceCodes();
 inline bool Binding::isHypershift() const
 {
     return targets.size() == 1 && targets.first() == Keys::Hypershift;
+}
+
+inline bool Binding::triggersHypershift() const
+{
+    return isHypershift() || (hold.size() == 1 && hold.first() == Keys::Hypershift);
+}
+
+inline int Binding::effectiveHoldTime() const
+{
+    return holdTime > 0 ? holdTime : Keys::HoldTimeDefault;
 }

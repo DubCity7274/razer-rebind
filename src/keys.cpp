@@ -102,6 +102,11 @@ QString comboLabel(const QList<int> &codes)
 
 QString bindingLabel(const Binding &binding, bool compact)
 {
+    if (binding.isTapHold()) {
+        const QString tap = binding.targets.isEmpty() ? QStringLiteral("nothing") : comboLabel(binding.targets);
+        return compact ? QStringLiteral("%1 / %2").arg(tap, comboLabel(binding.hold))
+                       : QStringLiteral("%1 · hold: %2").arg(tap, comboLabel(binding.hold));
+    }
     QString text = comboLabel(binding.targets);
     if (binding.turbo > 0 && !binding.targets.isEmpty())
         text += (compact ? QStringLiteral(" ×%1/s") : QStringLiteral(" · turbo %1/s")).arg(binding.turbo);

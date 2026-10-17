@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -67,6 +68,9 @@ private:
     bool createVirtualDevice();
     bool readSource(const Source &src);
     void handleEvent(const input_event &ev);
+    void dispatchKey(int code, int value);
+    void processKey(int code, int value);
+    void resolveTapHold(bool hold);
     void handleWheel(const input_event &ev);
     void forwardLeds();
 
@@ -115,4 +119,14 @@ private:
         bool down = false;
     };
     QHash<int, Turbo> m_turbo; // source code -> repeating binding while held
+
+    struct TapHold
+    {
+        int code = 0;
+        Binding binding;
+        qint64 deadline = 0;  // monotonic ns when it becomes a hold
+        QSet<int> pressedSince; // keys pressed while undecided
+    };
+    std::optional<TapHold> m_tapHold;          // key pressed, not yet a tap or a hold
+    std::vector<std::pair<int, int>> m_queued; // key events waiting for it: code, value
 };

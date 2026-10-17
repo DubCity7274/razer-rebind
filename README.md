@@ -11,6 +11,8 @@ drivers, runs on X11 and Wayland, and needs no root once installed.
 - **Hypershift:** hold a key or button you choose to give every device a
   second set of bindings, like Razer Synapse's Hypershift. Hold a mouse side
   button and your keyboard keys do something else.
+- **Tap vs hold:** one key, two jobs. Tap Caps Lock for Esc, hold it for
+  Ctrl; or tap Space for a space and hold it for Hypershift.
 - **Turbo:** a key or button repeats as long as you hold it, from 1 to 50
   presses per second.
 - **DPI and polling rate:** set up to five DPI stages for the button under
@@ -164,6 +166,21 @@ keyboard to its Hypershift layer too. Each device has its own Hypershift
 layer in each profile. The Hypershift key itself sends nothing. A key you
 press while holding it stays bound to its Hypershift action until you
 release that key, even if you let go of Hypershift first.
+
+### Tap vs hold
+
+Tick **Do something else when held** in a binding to give the input a second
+job. A tap sends what's chosen above it; holding sends the hold action, for
+as long as you hold it. The hold action can be keys (just a modifier such as
+Ctrl works) or Hypershift.
+
+It counts as held once you've held it for the hold time (200 ms unless you
+change it), or as soon as you press and release another key while holding
+it, so a quick Caps Lock + C gives Ctrl + C even inside the hold time. If you
+let go of it before the other key, as happens when typing fast, it's a tap.
+Until it's decided, other keys on the same device wait a moment so they
+come out in the right order; keys on other devices see the hold only after
+the hold time.
 
 ### Turbo
 
@@ -366,7 +383,8 @@ running. Keys use Linux input names such as `KEY_CAPSLOCK` and `BTN_SIDE`;
 `WHEEL_UP` and `WHEEL_DOWN` are the scroll wheel, and an empty list disables
 an input. `["HYPERSHIFT"]` makes a key a Hypershift key, a profile's
 `hypershift` object holds its Hypershift layer, and a binding with turbo is
-written as `{ "keys": [...], "turbo": 15 }`. A profile's `programs` lists the
+written as `{ "keys": [...], "turbo": 15 }`; tap vs hold adds `"hold": [...]`
+and optionally `"holdTime"` in ms. A profile's `programs` lists the
 programs that switch to it automatically, and `sensor` its DPI stages
 (`activeStage` counts from 1) and polling rate.
 

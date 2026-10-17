@@ -224,6 +224,10 @@ void Remapper::run()
         // Wake up for the next turbo press or release, or every 30 ms while
         // waiting to grab.
         long timeout = nextTurboTimeout();
+        if (m_tapHold) {
+            const long wait = long(std::max<qint64>(0, m_tapHold->deadline - monotonicNs()));
+            timeout = timeout < 0 ? wait : std::min(timeout, wait);
+        }
         if (m_pendingGrab && (timeout < 0 || timeout > 30000000))
             timeout = 30000000;
         timespec ts{timeout / 1000000000, timeout % 1000000000};
@@ -250,6 +254,8 @@ void Remapper::run()
         if (m_uinput && pfds.size() > m_sources.size() + 1 && (pfds.back().revents & POLLIN))
             forwardLeds();
         runTurbo();
+        if (m_tapHold && monotonicNs() >= m_tapHold->deadline)
+            resolveTapHold(true);
     }
 
     m_pendingGrab = false;
@@ -311,6 +317,8 @@ void Remapper::ungrab()
             --g_hypershiftHeld;
     m_held.clear();
     m_turbo.clear();
+    m_tapHold.reset();
+    m_queued.clear();
 
     for (const Source &s : m_sources)
         ::ioctl(s.fd, EVIOCGRAB, 0);
@@ -409,38 +417,7 @@ void Remapper::handleEvent(const input_event &ev)
         }
         if (!m_grabbed)
             return;
-
-        if (ev.value == 1) {
-            bool bound = false;
-            Binding b = lookup(ev.code, &bound);
-            if (!bound)
-                b.targets = {ev.code};
-            m_held.insert(ev.code, b.targets);
-            if (b.isHypershift())
-                ++g_hypershiftHeld;
-            else if (b.turbo > 0 && !b.targets.isEmpty())
-                startTurbo(ev.code, b);
-            else
-                pressAll(b.targets);
-        } else if (ev.value == 0) {
-            // Release exactly what this key pressed, even if its binding has
-            // changed while it was held.
-            const QList<int> targets = m_held.take(ev.code);
-            if (targets == QList<int>{Keys::Hypershift}) {
-                --g_hypershiftHeld;
-            } else if (auto t = m_turbo.find(ev.code); t != m_turbo.end()) {
-                if (t->down)
-                    releaseAll(t->targets);
-                m_turbo.erase(t);
-            } else {
-                releaseAll(targets);
-            }
-        } else if (ev.value == 2) {
-            // Key repeat: pass it on for plain bindings. Turbo makes its own.
-            const QList<int> targets = m_held.value(ev.code);
-            if (!targets.isEmpty() && targets.last() != Keys::Hypershift && !m_turbo.contains(ev.code))
-                write(EV_KEY, targets.last(), 2);
-        }
+        dispatchKey(ev.code, ev.value);
         return;
     }
     case EV_REL:
@@ -459,6 +436,90 @@ void Remapper::handleEvent(const input_event &ev)
         // EV_MSC scan codes would describe the physical key, not the remapped
         // one, so they are dropped along with anything else exotic.
         return;
+    }
+}
+
+void Remapper::dispatchKey(int code, int value)
+{
+    if (!m_tapHold) {
+        processKey(code, value);
+        return;
+    }
+    // A tap-or-hold key is undecided: its own release makes it a tap; other
+    // keys of this device wait, so they come out after whatever it becomes.
+    if (code == m_tapHold->code) {
+        if (value == 0)
+            resolveTapHold(false);
+        return;
+    }
+    if (value == 2)
+        return;
+    m_queued.push_back({code, value});
+    if (value == 1)
+        m_tapHold->pressedSince.insert(code);
+    else if (m_tapHold->pressedSince.contains(code))
+        resolveTapHold(true); // another key went down and up meanwhile: Caps + C means Ctrl + C
+}
+
+void Remapper::resolveTapHold(bool hold)
+{
+    const TapHold t = *m_tapHold;
+    m_tapHold.reset();
+    if (!hold) {
+        tap(t.binding.targets);
+    } else {
+        m_held.insert(t.code, t.binding.hold);
+        if (t.binding.hold == QList<int>{Keys::Hypershift})
+            ++g_hypershiftHeld;
+        else
+            pressAll(t.binding.hold);
+        syn();
+    }
+    // Replay what waited. A queued tap-or-hold key starts its own wait and
+    // queues the rest again.
+    const std::vector<std::pair<int, int>> queued = std::exchange(m_queued, {});
+    for (const auto &[code, value] : queued) {
+        dispatchKey(code, value);
+        syn();
+    }
+}
+
+void Remapper::processKey(int code, int value)
+{
+    if (value == 1) {
+        bool bound = false;
+        Binding b = lookup(code, &bound);
+        if (!bound)
+            b.targets = {code};
+        if (b.isTapHold()) {
+            m_tapHold = TapHold{code, b, monotonicNs() + qint64(b.effectiveHoldTime()) * 1000000, {}};
+            return;
+        }
+        m_held.insert(code, b.targets);
+        if (b.isHypershift())
+            ++g_hypershiftHeld;
+        else if (b.turbo > 0 && !b.targets.isEmpty())
+            startTurbo(code, b);
+        else
+            pressAll(b.targets);
+    } else if (value == 0) {
+        // Release exactly what this key pressed, even if its binding has
+        // changed while it was held.
+        const QList<int> targets = m_held.take(code);
+        if (targets == QList<int>{Keys::Hypershift}) {
+            --g_hypershiftHeld;
+        } else if (auto t = m_turbo.find(code); t != m_turbo.end()) {
+            if (t->down)
+                releaseAll(t->targets);
+            m_turbo.erase(t);
+        } else {
+            releaseAll(targets);
+        }
+    } else if (value == 2) {
+        // Key repeat: pass it on for plain bindings. Turbo makes its own.
+        const QList<int> targets = m_held.value(code);
+        if (!targets.isEmpty() && targets.last() != Keys::Hypershift && !m_turbo.contains(code))
+            write(EV_KEY, targets.last(), 2);
     }
 }
 

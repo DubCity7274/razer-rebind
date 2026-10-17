@@ -38,19 +38,34 @@ BindingMap bindingsFromJson(const QJsonObject &bindings)
             continue;
         Binding binding;
         QJsonArray keys = b.value().toArray();
+        QJsonArray hold;
         if (b.value().isObject()) {
             const QJsonObject o = b.value().toObject();
             keys = o.value(QStringLiteral("keys")).toArray();
+            hold = o.value(QStringLiteral("hold")).toArray();
             binding.turbo = std::clamp(o.value(QStringLiteral("turbo")).toInt(0), 0, Keys::TurboMax);
+            const int holdTime = o.value(QStringLiteral("holdTime")).toInt(0);
+            binding.holdTime = holdTime > 0 ? std::clamp(holdTime, Keys::HoldTimeMin, Keys::HoldTimeMax) : 0;
         }
         bool valid = true;
-        for (const QJsonValue &v : std::as_const(keys)) {
-            const int code = Keys::fromName(v.toString());
-            valid = valid && (Keys::isValidTarget(code) || (code == Keys::Hypershift && keys.size() == 1));
-            binding.targets << code;
-        }
-        if (binding.isHypershift() || Keys::isWheel(source))
+        auto parse = [&valid](const QJsonArray &names, QList<int> *out) {
+            for (const QJsonValue &v : names) {
+                const int code = Keys::fromName(v.toString());
+                valid = valid && (Keys::isValidTarget(code) || (code == Keys::Hypershift && names.size() == 1));
+                *out << code;
+            }
+        };
+        parse(keys, &binding.targets);
+        parse(hold, &binding.hold);
+        // A wheel notch can't be held; a tap can't be Hypershift.
+        if (Keys::isWheel(source))
+            binding.hold.clear();
+        if (binding.isTapHold() && binding.targets.contains(Keys::Hypershift))
+            valid = false;
+        if (binding.isHypershift() || binding.isTapHold() || Keys::isWheel(source))
             binding.turbo = 0;
+        if (!binding.isTapHold())
+            binding.holdTime = 0;
         if (valid)
             out.insert(source, binding);
     }
@@ -67,11 +82,22 @@ QJsonObject bindingsToJson(const BindingMap &bindings)
         QJsonArray targets;
         for (int t : b.targets)
             targets.append(Keys::name(t));
-        if (b.turbo > 0)
-            out.insert(Keys::name(source), QJsonObject{{QStringLiteral("keys"), targets},
-                                                       {QStringLiteral("turbo"), b.turbo}});
-        else
+        if (b.turbo > 0 || b.isTapHold()) {
+            QJsonObject o{{QStringLiteral("keys"), targets}};
+            if (b.turbo > 0)
+                o.insert(QStringLiteral("turbo"), b.turbo);
+            if (b.isTapHold()) {
+                QJsonArray hold;
+                for (int t : b.hold)
+                    hold.append(Keys::name(t));
+                o.insert(QStringLiteral("hold"), hold);
+                if (b.holdTime > 0 && b.holdTime != Keys::HoldTimeDefault)
+                    o.insert(QStringLiteral("holdTime"), b.holdTime);
+            }
+            out.insert(Keys::name(source), o);
+        } else {
             out.insert(Keys::name(source), targets);
+        }
     }
     return out;
 }
@@ -108,7 +134,7 @@ QString tr(const char *text)
 
 bool DeviceProfile::hasHypershiftKey() const
 {
-    return std::any_of(bindings.cbegin(), bindings.cend(), [](const Binding &b) { return b.isHypershift(); });
+    return std::any_of(bindings.cbegin(), bindings.cend(), [](const Binding &b) { return b.triggersHypershift(); });
 }
 
 QString shortDeviceName(const QString &deviceKey)

@@ -9,6 +9,7 @@
 #include <QSet>
 
 class QCheckBox;
+class QGroupBox;
 class QLabel;
 class QRadioButton;
 class QSpinBox;
@@ -68,6 +69,7 @@ public:
 
 private:
     QList<int> targets() const;
+    QList<int> holdTargets() const;
     void updateState();
 
     KeyPicker *m_source;
@@ -77,6 +79,15 @@ private:
     QRadioButton *m_hypershift;
     QCheckBox *m_turbo;
     QSpinBox *m_turboRate;
+    QGroupBox *m_holdBox;      // checkable: tap vs hold
+    QRadioButton *m_holdKeys;
+    QRadioButton *m_holdHypershift;
+    QCheckBox *m_holdCtrl;
+    QCheckBox *m_holdShift;
+    QCheckBox *m_holdAlt;
+    QCheckBox *m_holdSuper;
+    KeyPicker *m_holdKey;
+    QSpinBox *m_holdTime;
     QCheckBox *m_ctrl;
     QCheckBox *m_shift;
     QCheckBox *m_alt;

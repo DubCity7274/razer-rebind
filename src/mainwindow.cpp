@@ -604,7 +604,7 @@ QString MainWindow::hypershiftKeysText() const
         const BindingMap bindings = m_config->device(device).bindings;
         QList<int> codes;
         for (auto it = bindings.cbegin(); it != bindings.cend(); ++it)
-            if (it->isHypershift())
+            if (it->triggersHypershift())
                 codes << it.key();
         std::sort(codes.begin(), codes.end());
         for (int code : codes)
@@ -674,7 +674,7 @@ void MainWindow::editBinding(int sourceCode)
         if (bindings.contains(sourceCode))
             dlg.setBinding(bindings.value(sourceCode));
         else if (Keys::isValidTarget(sourceCode))
-            dlg.setBinding(Binding{{sourceCode}, 0});
+            dlg.setBinding(Binding{{sourceCode}, 0, {}, 0});
     }
     if (dlg.exec() != QDialog::Accepted)
         return;
@@ -699,7 +699,7 @@ void MainWindow::storeBinding(int oldSource, int source, const Binding &binding)
         bindings.remove(oldSource);
     // Mapping a key to exactly itself is the same as having no binding,
     // unless it overrides a Normal binding in the Hypershift layer.
-    const bool identity = binding == Binding{{source}, 0};
+    const bool identity = binding == Binding{{source}, 0, {}, 0};
     if (identity && !(m_hypershiftLayer && p.bindings.contains(source)))
         bindings.remove(source);
     else

@@ -193,18 +193,18 @@ int main(int argc, char **argv)
     FakeDevice mouse(dir.path(), QStringLiteral("mouse"), RazerDevice::Mouse);
 
     DeviceProfile kp;
-    kp.bindings.insert(KEY_A, Binding{{KEY_B}, 0});
-    kp.bindings.insert(KEY_D, Binding{{KEY_E}, 0});
-    kp.bindings.insert(KEY_T, Binding{{KEY_T}, 20});
-    kp.bindings.insert(KEY_CAPSLOCK, Binding{{Keys::Hypershift}, 0});
-    kp.hypershift.insert(KEY_A, Binding{{KEY_C}, 0});
-    kp.hypershift.insert(KEY_F, Binding{{KEY_LEFTCTRL, KEY_V}, 0});
-    kp.hypershift.insert(KEY_G, Binding{{KEY_G}, 25});
+    kp.bindings.insert(KEY_A, Binding{{KEY_B}, 0, {}, 0});
+    kp.bindings.insert(KEY_D, Binding{{KEY_E}, 0, {}, 0});
+    kp.bindings.insert(KEY_T, Binding{{KEY_T}, 20, {}, 0});
+    kp.bindings.insert(KEY_CAPSLOCK, Binding{{Keys::Hypershift}, 0, {}, 0});
+    kp.hypershift.insert(KEY_A, Binding{{KEY_C}, 0, {}, 0});
+    kp.hypershift.insert(KEY_F, Binding{{KEY_LEFTCTRL, KEY_V}, 0, {}, 0});
+    kp.hypershift.insert(KEY_G, Binding{{KEY_G}, 25, {}, 0});
     kbd.remapper->setProfile(kp);
 
     DeviceProfile mp;
-    mp.bindings.insert(BTN_SIDE, Binding{{Keys::Hypershift}, 0});
-    mp.hypershift.insert(BTN_LEFT, Binding{{BTN_RIGHT}, 0});
+    mp.bindings.insert(BTN_SIDE, Binding{{Keys::Hypershift}, 0, {}, 0});
+    mp.hypershift.insert(BTN_LEFT, Binding{{BTN_RIGHT}, 0, {}, 0});
     mouse.remapper->setProfile(mp);
 
     if (!kbd.start() || !mouse.start()) {
@@ -296,6 +296,75 @@ int main(int argc, char **argv)
         CHECK(count(out, KEY_G, 0) == presses);
     }
 
+    // Tap vs hold: Tab taps Tab, holds Ctrl; Space taps space, holds
+    // Hypershift. Hold time 300 ms, so the quick sequences below (60 ms per
+    // event) stay well inside it.
+    {
+        DeviceProfile th = kp;
+        th.bindings.insert(KEY_TAB, Binding{{KEY_TAB}, 0, {KEY_LEFTCTRL}, 300});
+        th.bindings.insert(KEY_SPACE, Binding{{KEY_SPACE}, 0, {Keys::Hypershift}, 300});
+        kbd.remapper->setProfile(th);
+        takeOutput();
+
+        kbd.key(KEY_TAB, 1);
+        kbd.key(KEY_TAB, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_TAB, 1}, {KEY_TAB, 0}}));
+
+        // Held past the hold time; key repeat then repeats the hold output,
+        // like a real Ctrl key held down.
+        kbd.key(KEY_TAB, 1);
+        settle(300);
+        kbd.key(KEY_TAB, 2);
+        kbd.key(KEY_TAB, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_LEFTCTRL, 1}, {KEY_LEFTCTRL, 2}, {KEY_LEFTCTRL, 0}}));
+
+        // Key repeat while still undecided sends nothing.
+        kbd.key(KEY_TAB, 1);
+        kbd.key(KEY_TAB, 2);
+        kbd.key(KEY_TAB, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_TAB, 1}, {KEY_TAB, 0}}));
+
+        // Another key pressed and released meanwhile makes it a hold at once,
+        // and that key comes out after Ctrl.
+        kbd.key(KEY_TAB, 1);
+        kbd.key(KEY_Z, 1);
+        kbd.key(KEY_Z, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_LEFTCTRL, 1}, {KEY_Z, 1}, {KEY_Z, 0}}));
+        kbd.key(KEY_TAB, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_LEFTCTRL, 0}}));
+
+        // Typing fast (Tab released before the next key) is a tap, and the
+        // next key still comes out, after the tap.
+        kbd.key(KEY_TAB, 1);
+        kbd.key(KEY_Z, 1);
+        kbd.key(KEY_TAB, 0);
+        kbd.key(KEY_Z, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_TAB, 1}, {KEY_TAB, 0}, {KEY_Z, 1}, {KEY_Z, 0}}));
+
+        // A key pressed meanwhile but released only after the hold time.
+        kbd.key(KEY_TAB, 1);
+        kbd.key(KEY_Z, 1);
+        settle(300);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_LEFTCTRL, 1}, {KEY_Z, 1}}));
+        kbd.key(KEY_Z, 0);
+        kbd.key(KEY_TAB, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_Z, 0}, {KEY_LEFTCTRL, 0}}));
+
+        // Hold for Hypershift: queued keys use the Hypershift layer.
+        kbd.key(KEY_SPACE, 1);
+        kbd.key(KEY_A, 1);
+        kbd.key(KEY_A, 0);
+        kbd.key(KEY_SPACE, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_C, 1}, {KEY_C, 0}}));
+        kbd.key(KEY_SPACE, 1);
+        kbd.key(KEY_SPACE, 0);
+        kbd.key(KEY_A, 1);
+        kbd.key(KEY_A, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_SPACE, 1}, {KEY_SPACE, 0}, {KEY_B, 1}, {KEY_B, 0}}));
+
+        kbd.remapper->setProfile(kp);
+    }
+
     // A device that goes away while its Hypershift key is held doesn't leave
     // the other devices stuck in the layer.
     mouse.key(BTN_SIDE, 1);
@@ -326,6 +395,17 @@ int main(int argc, char **argv)
         CHECK(json.contains("\"KEY_A\": [\n"));
         CHECK(json.contains("\"turbo\": 20"));
         CHECK(json.contains("\"HYPERSHIFT\""));
+
+        // Tap vs hold round trip.
+        DeviceProfile th = kp;
+        th.bindings.insert(KEY_CAPSLOCK, Binding{{KEY_ESC}, 0, {KEY_LEFTCTRL}, 0});
+        th.bindings.insert(KEY_SPACE, Binding{{KEY_SPACE}, 0, {Keys::Hypershift}, 350});
+        c.setDevice(QStringLiteral("kbd"), th);
+        CHECK(c.save(nullptr));
+        Config again;
+        CHECK(again.load(path, nullptr));
+        CHECK(again.device(QStringLiteral("kbd")).bindings == th.bindings);
+        CHECK(again.device(QStringLiteral("kbd")).hasHypershiftKey());
     }
 
     // Sensor settings: saved per profile; the first one set is copied to the

@@ -193,6 +193,46 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, b
     auto *outputBox = new QGroupBox(tr("Do this instead"));
     outputBox->setLayout(outLayout);
 
+    // When held: tap does the above, hold does this.
+    m_holdBox = new QGroupBox(tr("Do something else when held"));
+    m_holdBox->setCheckable(true);
+    m_holdBox->setChecked(false);
+    m_holdBox->setToolTip(tr("A tap does what's chosen above; holding the input does this instead"));
+    m_holdKeys = new QRadioButton(tr("Send"));
+    m_holdKeys->setChecked(true);
+    m_holdHypershift = new QRadioButton(tr("Hypershift"));
+    m_holdHypershift->setVisible(!hypershiftLayer);
+    m_holdCtrl = new QCheckBox(tr("Ctrl"));
+    m_holdShift = new QCheckBox(tr("Shift"));
+    m_holdAlt = new QCheckBox(tr("Alt"));
+    m_holdSuper = new QCheckBox(tr("Super"));
+    m_holdKey = new KeyPicker(Keys::targetCodes(), true);
+    m_holdKey->setCode(0);
+    m_holdTime = new QSpinBox;
+    m_holdTime->setRange(Keys::HoldTimeMin, Keys::HoldTimeMax);
+    m_holdTime->setSingleStep(25);
+    m_holdTime->setValue(Keys::HoldTimeDefault);
+    m_holdTime->setSuffix(tr(" ms"));
+    auto *holdKeysRow = new QHBoxLayout;
+    holdKeysRow->addWidget(m_holdKeys);
+    for (QCheckBox *cb : {m_holdCtrl, m_holdShift, m_holdAlt, m_holdSuper})
+        holdKeysRow->addWidget(cb);
+    holdKeysRow->addWidget(new QLabel(QStringLiteral("+")));
+    holdKeysRow->addWidget(m_holdKey, 1);
+    auto *holdTimeRow = new QHBoxLayout;
+    holdTimeRow->addWidget(m_holdHypershift);
+    holdTimeRow->addStretch();
+    holdTimeRow->addWidget(new QLabel(tr("Counts as held after")));
+    holdTimeRow->addWidget(m_holdTime);
+    auto *holdNote = new QLabel(tr("Pressing and releasing another key while holding also counts as held, "
+                                   "so a quick Caps Lock + C gives Ctrl + C."));
+    holdNote->setWordWrap(true);
+    holdNote->setStyleSheet(QStringLiteral("color: palette(placeholder-text);"));
+    auto *holdLayout = new QVBoxLayout(m_holdBox);
+    holdLayout->addLayout(holdKeysRow);
+    holdLayout->addLayout(holdTimeRow);
+    holdLayout->addWidget(holdNote);
+
     m_preview = new QLabel;
     m_preview->setTextFormat(Qt::RichText);
     m_preview->setAlignment(Qt::AlignCenter);
@@ -205,13 +245,17 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, b
     auto *layout = new QVBoxLayout(this);
     layout->addWidget(inputBox);
     layout->addWidget(outputBox);
+    layout->addWidget(m_holdBox);
     layout->addWidget(m_preview);
     layout->addWidget(buttons);
 
     connect(m_source, &KeyPicker::codeChanged, this, &BindingDialog::updateState);
     connect(m_key, &KeyPicker::codeChanged, this, &BindingDialog::updateState);
-    for (QAbstractButton *b : std::initializer_list<QAbstractButton *>{m_remap, m_disable, m_hypershift, m_ctrl, m_shift, m_alt, m_super, m_turbo})
+    for (QAbstractButton *b : std::initializer_list<QAbstractButton *>{m_remap, m_disable, m_hypershift, m_ctrl, m_shift, m_alt, m_super, m_turbo, m_holdKeys,
+          m_holdHypershift, m_holdCtrl, m_holdShift, m_holdAlt, m_holdSuper})
         connect(b, &QAbstractButton::toggled, this, &BindingDialog::updateState);
+    connect(m_holdBox, &QGroupBox::toggled, this, &BindingDialog::updateState);
+    connect(m_holdKey, &KeyPicker::codeChanged, this, &BindingDialog::updateState);
     connect(m_turboRate, &QSpinBox::valueChanged, this, &BindingDialog::updateState);
     connect(m_record, &KeyRecorder::recorded, this, [this](const QList<int> &codes) {
         Binding b = binding();
@@ -240,6 +284,21 @@ void BindingDialog::setSource(int code)
 void BindingDialog::setBinding(const Binding &binding)
 {
     const QList<int> &targets = binding.targets;
+    m_holdBox->setChecked(binding.isTapHold());
+    if (binding.isTapHold()) {
+        m_holdTime->setValue(binding.effectiveHoldTime());
+        const bool hyper = binding.hold == QList<int>{Keys::Hypershift};
+        (hyper && !m_holdHypershift->isHidden() ? m_holdHypershift : m_holdKeys)->setChecked(true);
+        m_holdCtrl->setChecked(binding.hold.contains(KEY_LEFTCTRL));
+        m_holdShift->setChecked(binding.hold.contains(KEY_LEFTSHIFT));
+        m_holdAlt->setChecked(binding.hold.contains(KEY_LEFTALT));
+        m_holdSuper->setChecked(binding.hold.contains(KEY_LEFTMETA));
+        int key = 0;
+        for (int c : binding.hold)
+            if (c != KEY_LEFTCTRL && c != KEY_LEFTSHIFT && c != KEY_LEFTALT && c != KEY_LEFTMETA && c != Keys::Hypershift)
+                key = c;
+        m_holdKey->setCode(key);
+    }
     m_turbo->setChecked(binding.turbo > 0);
     if (binding.turbo > 0)
         m_turboRate->setValue(binding.turbo);
@@ -277,9 +336,30 @@ Binding BindingDialog::binding() const
         return b;
     }
     b.targets = targets();
+    if (m_holdBox->isChecked() && !Keys::isWheel(source())) {
+        b.hold = holdTargets();
+        b.holdTime = m_holdTime->value() == Keys::HoldTimeDefault ? 0 : m_holdTime->value();
+        if (!b.hold.isEmpty())
+            return b;
+    }
     if (m_remap->isChecked() && m_turbo->isChecked() && !Keys::isWheel(source()))
         b.turbo = m_turboRate->value();
     return b;
+}
+
+QList<int> BindingDialog::holdTargets() const
+{
+    if (m_holdHypershift->isChecked())
+        return {Keys::Hypershift};
+    QList<int> out;
+    if (m_holdCtrl->isChecked()) out << KEY_LEFTCTRL;
+    if (m_holdShift->isChecked()) out << KEY_LEFTSHIFT;
+    if (m_holdAlt->isChecked()) out << KEY_LEFTALT;
+    if (m_holdSuper->isChecked()) out << KEY_LEFTMETA;
+    const int key = m_holdKey->code();
+    if (key > 0 && !out.contains(key))
+        out << key;
+    return out;
 }
 
 QList<int> BindingDialog::targets() const
@@ -304,17 +384,26 @@ void BindingDialog::updateState()
     const bool wheel = Keys::isWheel(src);
     if (wheel && m_hypershift->isChecked())
         m_remap->setChecked(true);
-    m_hypershift->setEnabled(!wheel);
+    // A tap is over at once, so it can't hold the Hypershift layer or repeat.
+    const bool tapHold = m_holdBox->isChecked() && !wheel;
+    if (tapHold && m_hypershift->isChecked())
+        m_remap->setChecked(true);
+    m_hypershift->setEnabled(!wheel && !tapHold);
+    m_holdBox->setEnabled(!wheel);
     const bool remap = m_remap->isChecked();
     for (QWidget *w : std::initializer_list<QWidget *>{m_ctrl, m_shift, m_alt, m_super, m_key, m_record})
         w->setEnabled(remap);
-    m_turbo->setEnabled(remap && !wheel);
-    m_turboRate->setEnabled(remap && !wheel && m_turbo->isChecked());
+    m_turbo->setEnabled(remap && !wheel && !tapHold);
+    m_turboRate->setEnabled(remap && !wheel && !tapHold && m_turbo->isChecked());
+    for (QWidget *w : std::initializer_list<QWidget *>{m_holdCtrl, m_holdShift, m_holdAlt, m_holdSuper, m_holdKey})
+        w->setEnabled(m_holdKeys->isChecked());
 
     const QList<int> out = targets();
     QString left = src > 0 ? Keys::label(src).toHtmlEscaped() : tr("<i>choose an input</i>");
     QString right;
-    if (m_hypershift->isChecked())
+    if (tapHold && !holdTargets().isEmpty())
+        right = Keys::bindingLabel(binding()).toHtmlEscaped();
+    else if (m_hypershift->isChecked())
         right = tr("<span style='color:#96e'>Hypershift while held</span>");
     else if (!remap)
         right = tr("<span style='color:#c44'>nothing</span>");
@@ -333,6 +422,10 @@ void BindingDialog::accept()
     }
     if (m_remap->isChecked() && (targets().isEmpty() || m_key->code() < 0)) {
         QMessageBox::warning(this, windowTitle(), tr("Choose the key or shortcut to send, or pick \"Do nothing\"."));
+        return;
+    }
+    if (m_holdBox->isChecked() && !Keys::isWheel(source()) && (holdTargets().isEmpty() || (m_holdKeys->isChecked() && m_holdKey->code() < 0))) {
+        QMessageBox::warning(this, windowTitle(), tr("Choose what holding it sends, or untick \"Do something else when held\"."));
         return;
     }
     m_detector->stop();

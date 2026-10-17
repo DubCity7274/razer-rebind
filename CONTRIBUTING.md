@@ -108,6 +108,11 @@ Wine and Proton games), its executable and its kernel name. Before switching,
 the device's previous profile is saved to the config as `autoRestore`, so a
 restart in the middle of a game still switches back afterwards.
 
+A tap-or-hold key sends nothing when pressed. Key events from the same device
+queue up behind it until its release (a tap), the hold time passing, or a
+queued key's release (both holds); then the queue is replayed through the
+normal path, where another tap-or-hold key can start its own wait.
+
 Hotkeys are matched inside the worker threads. Modifier state is shared
 between devices, so Ctrl on the keyboard combines with a mouse button. A
 local socket in the user's runtime directory lets

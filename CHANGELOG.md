@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.0 (unreleased)
+
+### New features
+
+- **Tap vs hold.** A binding can do one thing when tapped and another when
+  held: tap Caps Lock for Esc, hold it for Ctrl, or hold Space for
+  Hypershift. Tick **Do something else when held** in the binding editor.
+  Pressing and releasing another key while holding counts as held, so a
+  quick Caps Lock + C gives Ctrl + C; letting go first, as in fast typing,
+  stays a tap. The hold time is 200 ms by default and can be changed per
+  binding.
+
 ## 0.7.0 (2026-10-17)
 
 ### New features
