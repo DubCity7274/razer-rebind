@@ -108,6 +108,10 @@ Wine and Proton games), its executable and its kernel name. Before switching,
 the device's previous profile is saved to the config as `autoRestore`, so a
 restart in the middle of a game still switches back afterwards.
 
+Macros play in the worker thread on the same `ppoll()` timeouts as turbo:
+each playing macro has a step index and the time its next step is due, and
+remembers which keys it holds so stopping it releases them.
+
 A tap-or-hold key sends nothing when pressed. Key events from the same device
 queue up behind it until its release (a tap), the hold time passing, or a
 queued key's release (both holds); then the queue is replayed through the
@@ -140,6 +144,7 @@ are polled once a minute on a background thread.
 | `src/settingsdialog.*` | Notification and battery settings |
 | `src/keys.*` | Key names and labels, and which codes are safe to emit |
 | `src/deviceview.*` | Clickable Huntsman Elite and Viper Ultimate pictures |
+| `src/macrodialog.*` | Macro recorder and step editor |
 | `src/bindingdialog.*` | Binding editor (search, detect, record shortcut) |
 | `src/hotkeydialog.*` | Hotkey list and editor |
 | `src/inputdetector.*` | "Press it on the device" detection used by both editors |

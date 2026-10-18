@@ -11,6 +11,8 @@ drivers, runs on X11 and Wayland, and needs no root once installed.
 - **Hypershift:** hold a key or button you choose to give every device a
   second set of bindings, like Razer Synapse's Hypershift. Hold a mouse side
   button and your keyboard keys do something else.
+- **Macros:** record a sequence of keys and buttons, with its timing, and
+  play it from any key or button: once, repeating while held, or on/off.
 - **Tap vs hold:** one key, two jobs. Tap Caps Lock for Esc, hold it for
   Ctrl; or tap Space for a space and hold it for Hypershift.
 - **Turbo:** a key or button repeats as long as you hold it, from 1 to 50
@@ -147,6 +149,15 @@ After installing, start **Razer Rebind** from your application menu.
    use **Record shortcut**), **Do nothing**, or **Hypershift**. Tick
    **Turbo** to make it repeat while held.
 
+To bind a combo instead of a single key, tick the modifiers under **Only
+while holding** (or hold them while you press **Detect**): Ctrl + Shift + S
+can play a macro or send F5 while S alone keeps its own binding. The
+modifiers have to match exactly, either side counts, and remapped ones
+count too (Caps Lock bound to Ctrl works as Ctrl). They're lifted while the
+combo's output goes out, so F5 isn't sent as Ctrl + Shift + F5, and go back
+down if you're still holding them. Combos are listed under the picture, not
+drawn on it; a hotkey with the same keys wins.
+
 Bound keys are highlighted, and keys light up while you hold them. Bindings
 are saved and applied immediately. **Ctrl+E** turns all remapping off and
 on; when it's off, your devices behave exactly as if the app weren't running.
@@ -167,6 +178,28 @@ keyboard to its Hypershift layer too. Each device has its own Hypershift
 layer in each profile. The Hypershift key itself sends nothing. A key you
 press while holding it stays bound to its Hypershift action until you
 release that key, even if you let go of Hypershift first.
+
+### Macros
+
+Choose **Play a macro** in a binding and click **Edit macro…**. Press
+**Record**, then type or click on your Razer devices; every press and
+release is added, with the pauses between them unless you untick **Record
+pauses**. Click **Stop recording** when you're done (that click isn't
+recorded). You can also add keys and pauses by hand, edit a step by
+double-clicking it, and reorder or remove steps.
+
+Pick how it plays:
+
+- **Play once:** the whole macro runs once per press, even if you let go
+  early.
+- **Repeat while held:** it starts over until you let go, and stops at once
+  when you do.
+- **Press to start, press again to stop:** it repeats until you press the
+  key again.
+
+When a macro stops, any key it was holding is let go. A repeating macro
+without pauses waits 10 ms between rounds. Macros can't type text (only keys
+and buttons) and can't be combined with turbo or tap vs hold.
 
 ### Tap vs hold
 
@@ -376,8 +409,6 @@ Razer Rebind makes no network connections. Your settings stay in
 - **Viper Ultimate side buttons:** with the factory settings, the right-hand
   buttons send the same signals as the left-hand ones, so each pair is
   rebound together. **Detect** shows what your mouse actually sends.
-- **One-to-one bindings:** one input sends one key or shortcut. There are no
-  timed macros.
 - **Automatic switching follows running programs, not the focused window:**
   alt-tabbing out of a game keeps its profile until you quit the game.
 - **One remapper per device:** don't use another input remapper
@@ -388,12 +419,15 @@ Razer Rebind makes no network connections. Your settings stay in
 
 Settings are saved to `~/.config/razer-rebind/bindings.json` whenever you
 change something. The file can also be edited by hand while the app isn't
-running. Keys use Linux input names such as `KEY_CAPSLOCK` and `BTN_SIDE`;
+running. Keys use Linux input names such as `KEY_CAPSLOCK` and `BTN_SIDE`, with
+modifiers in front for combos (`Ctrl+Shift+KEY_S`);
 `WHEEL_UP` and `WHEEL_DOWN` are the scroll wheel, and an empty list disables
 an input. `["HYPERSHIFT"]` makes a key a Hypershift key, a profile's
 `hypershift` object holds its Hypershift layer, and a binding with turbo is
 written as `{ "keys": [...], "turbo": 15 }`; tap vs hold adds `"hold": [...]`
-and optionally `"holdTime"` in ms. A profile's `programs` lists the
+and optionally `"holdTime"` in ms, and a macro is `"macro": [{"press":
+"KEY_A"}, {"delay": 50}, {"release": "KEY_A"}]` with an optional
+`"macroMode"` of `"while-held"` or `"toggle"`. A profile's `programs` lists the
 programs that switch to it automatically, and `sensor` its DPI stages
 (`activeStage` counts from 1) and polling rate.
 

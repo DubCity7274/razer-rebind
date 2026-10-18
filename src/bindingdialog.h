@@ -60,9 +60,9 @@ public:
     // itself be a Hypershift key.
     BindingDialog(RemapManager *manager, const RazerDevice &device, bool hypershiftLayer, QWidget *parent = nullptr);
 
-    void setSource(int code);
+    void setSource(int trigger); // a code, or a combo from Keys::trigger()
     void setBinding(const Binding &binding);
-    int source() const;
+    int source() const; // trigger: the input plus the modifiers it needs
     Binding binding() const;
 
     void accept() override;
@@ -73,10 +73,20 @@ private:
     void updateState();
 
     KeyPicker *m_source;
+    QCheckBox *m_srcCtrl;
+    QCheckBox *m_srcShift;
+    QCheckBox *m_srcAlt;
+    QCheckBox *m_srcSuper;
     QPushButton *m_detect;
     QRadioButton *m_remap;
     QRadioButton *m_disable;
     QRadioButton *m_hypershift;
+    QRadioButton *m_macro;
+    QPushButton *m_macroEdit;
+    QComboBox *m_macroMode;
+    QLabel *m_macroSummary;
+    QList<MacroStep> m_macroSteps;
+    RemapManager *m_manager;
     QCheckBox *m_turbo;
     QSpinBox *m_turboRate;
     QGroupBox *m_holdBox;      // checkable: tap vs hold

@@ -30,6 +30,7 @@ qt_add_executable(razer-rebind
     src/sensorpanel.cpp src/sensorpanel.h
     src/deviceview.cpp src/deviceview.h
     src/bindingdialog.cpp src/bindingdialog.h
+    src/macrodialog.cpp src/macrodialog.h
     src/mainwindow.cpp src/mainwindow.h
 )
 target_compile_options(razer-rebind PRIVATE -Wall -Wextra)

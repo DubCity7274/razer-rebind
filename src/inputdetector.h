@@ -22,6 +22,10 @@ public:
     // Collect held modifiers and finish on the first other key (hotkeys),
     // instead of finishing on the very first press (bindings).
     void setCollectModifiers(bool collect) { m_collectModifiers = collect; }
+    // With collected modifiers: also accept a modifier pressed and released
+    // on its own (bindings can rebind Ctrl itself), and count modifiers held
+    // on any device, so Ctrl on the keyboard combines with a mouse button.
+    void setModifierAlone(bool allow) { m_modifierAlone = allow; }
     void setSwallow(bool keys, bool mouse);
 
     bool isActive() const { return m_active; }
@@ -41,6 +45,8 @@ private:
     QString m_buttonText;
     QString m_device;
     bool m_collectModifiers = false;
+    bool m_modifierAlone = false;
+    int m_loneModifier = -1; // modifier pressed with nothing else since
     bool m_swallowKeys = true;
     bool m_swallowMouse = false;
     bool m_active = false;

@@ -33,6 +33,7 @@ struct Output
     const void *device;
     int code;
     int value;
+    std::chrono::steady_clock::time_point time;
 };
 
 std::mutex g_outputMutex;
@@ -77,7 +78,7 @@ extern "C" int libevdev_uinput_write_event(const libevdev_uinput *dev, unsigned 
 {
     if (type == EV_KEY) {
         std::lock_guard lock(g_outputMutex);
-        g_output.push_back({dev, int(code), value});
+        g_output.push_back({dev, int(code), value, std::chrono::steady_clock::now()});
     }
     return 0;
 }
@@ -113,6 +114,11 @@ std::vector<std::pair<int, int>> keys(const std::vector<Output> &out)
     std::vector<std::pair<int, int>> k;
     for (const Output &o : out)
         k.emplace_back(o.code, o.value);
+    if (qEnvironmentVariableIsSet("DEBUG_KEYS")) {
+        for (auto &[c, v] : k)
+            std::fprintf(stderr, "%d=%d ", c, v);
+        std::fprintf(stderr, "\n");
+    }
     return k;
 }
 
@@ -193,18 +199,18 @@ int main(int argc, char **argv)
     FakeDevice mouse(dir.path(), QStringLiteral("mouse"), RazerDevice::Mouse);
 
     DeviceProfile kp;
-    kp.bindings.insert(KEY_A, Binding{{KEY_B}, 0, {}, 0});
-    kp.bindings.insert(KEY_D, Binding{{KEY_E}, 0, {}, 0});
-    kp.bindings.insert(KEY_T, Binding{{KEY_T}, 20, {}, 0});
-    kp.bindings.insert(KEY_CAPSLOCK, Binding{{Keys::Hypershift}, 0, {}, 0});
-    kp.hypershift.insert(KEY_A, Binding{{KEY_C}, 0, {}, 0});
-    kp.hypershift.insert(KEY_F, Binding{{KEY_LEFTCTRL, KEY_V}, 0, {}, 0});
-    kp.hypershift.insert(KEY_G, Binding{{KEY_G}, 25, {}, 0});
+    kp.bindings.insert(KEY_A, makeBinding({KEY_B}, 0, {}, 0));
+    kp.bindings.insert(KEY_D, makeBinding({KEY_E}, 0, {}, 0));
+    kp.bindings.insert(KEY_T, makeBinding({KEY_T}, 20, {}, 0));
+    kp.bindings.insert(KEY_CAPSLOCK, makeBinding({Keys::Hypershift}, 0, {}, 0));
+    kp.hypershift.insert(KEY_A, makeBinding({KEY_C}, 0, {}, 0));
+    kp.hypershift.insert(KEY_F, makeBinding({KEY_LEFTCTRL, KEY_V}, 0, {}, 0));
+    kp.hypershift.insert(KEY_G, makeBinding({KEY_G}, 25, {}, 0));
     kbd.remapper->setProfile(kp);
 
     DeviceProfile mp;
-    mp.bindings.insert(BTN_SIDE, Binding{{Keys::Hypershift}, 0, {}, 0});
-    mp.hypershift.insert(BTN_LEFT, Binding{{BTN_RIGHT}, 0, {}, 0});
+    mp.bindings.insert(BTN_SIDE, makeBinding({Keys::Hypershift}, 0, {}, 0));
+    mp.hypershift.insert(BTN_LEFT, makeBinding({BTN_RIGHT}, 0, {}, 0));
     mouse.remapper->setProfile(mp);
 
     if (!kbd.start() || !mouse.start()) {
@@ -301,8 +307,8 @@ int main(int argc, char **argv)
     // event) stay well inside it.
     {
         DeviceProfile th = kp;
-        th.bindings.insert(KEY_TAB, Binding{{KEY_TAB}, 0, {KEY_LEFTCTRL}, 300});
-        th.bindings.insert(KEY_SPACE, Binding{{KEY_SPACE}, 0, {Keys::Hypershift}, 300});
+        th.bindings.insert(KEY_TAB, makeBinding({KEY_TAB}, 0, {KEY_LEFTCTRL}, 300));
+        th.bindings.insert(KEY_SPACE, makeBinding({KEY_SPACE}, 0, {Keys::Hypershift}, 300));
         kbd.remapper->setProfile(th);
         takeOutput();
 
@@ -365,6 +371,166 @@ int main(int argc, char **argv)
         kbd.remapper->setProfile(kp);
     }
 
+    // Macros.
+    {
+        auto macro = [](QList<MacroStep> steps, Binding::MacroMode mode) {
+            Binding b;
+            b.macro = steps;
+            b.macroMode = mode;
+            return b;
+        };
+        using S = MacroStep;
+        DeviceProfile mp2 = kp;
+        mp2.bindings.insert(KEY_M, macro({{S::Press, KEY_A}, {S::Delay, 100}, {S::Release, KEY_A},
+                                          {S::Press, KEY_B}, {S::Release, KEY_B}}, Binding::PlayOnce));
+        mp2.bindings.insert(KEY_N, macro({{S::Press, KEY_C}, {S::Delay, 30}, {S::Release, KEY_C}, {S::Delay, 30}},
+                                         Binding::RepeatWhileHeld));
+        mp2.bindings.insert(KEY_O, macro({{S::Press, KEY_D}, {S::Release, KEY_D}}, Binding::Toggle));
+        mp2.bindings.insert(KEY_P, macro({{S::Release, KEY_X}, {S::Press, KEY_Y}, {S::Release, KEY_Y}}, Binding::PlayOnce));
+        kbd.remapper->setProfile(mp2);
+        takeOutput();
+
+        // Plays to the end even when let go at once, with its pause.
+        kbd.key(KEY_M, 1);
+        kbd.key(KEY_M, 0);
+        settle(120);
+        {
+            const auto out = takeOutput();
+            CHECK((keys(out) == Keys2{{KEY_A, 1}, {KEY_A, 0}, {KEY_B, 1}, {KEY_B, 0}}));
+            if (out.size() == 4) {
+                const auto pause = std::chrono::duration_cast<std::chrono::milliseconds>(out[1].time - out[0].time).count();
+                CHECK(pause >= 95 && pause < 160);
+            }
+        }
+
+        // Repeats while held, stops when let go, nothing left down.
+        auto held = std::chrono::steady_clock::now();
+        kbd.key(KEY_N, 1);
+        settle(300);
+        double rounds = std::chrono::duration<double>(std::chrono::steady_clock::now() - held).count() / 0.060;
+        kbd.key(KEY_N, 0);
+        settle(100);
+        {
+            const auto out = takeOutput();
+            const int presses = count(out, KEY_C, 1);
+            CHECK(presses >= rounds - 2 && presses <= rounds + 2);
+            CHECK(count(out, KEY_C, 0) == presses);
+        }
+
+        // Toggle: one press starts it, the next stops it. Without pauses it
+        // still waits between rounds instead of spinning.
+        kbd.key(KEY_O, 1);
+        kbd.key(KEY_O, 0);
+        settle(100);
+        kbd.key(KEY_O, 1);
+        kbd.key(KEY_O, 0);
+        {
+            const auto out = takeOutput();
+            const int presses = count(out, KEY_D, 1);
+            CHECK(presses >= 8 && presses <= 25);
+            CHECK(count(out, KEY_D, 0) == presses);
+        }
+        settle(100);
+        CHECK(takeOutput().empty());
+
+        // A release of a key the macro didn't press is skipped.
+        kbd.key(KEY_P, 1);
+        kbd.key(KEY_P, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_Y, 1}, {KEY_Y, 0}}));
+
+        // A macro holding a key when it's stopped lets go of it.
+        mp2.bindings.insert(KEY_N, macro({{S::Press, KEY_LEFTSHIFT}, {S::Delay, 1000}, {S::Release, KEY_LEFTSHIFT}},
+                                         Binding::RepeatWhileHeld));
+        kbd.remapper->setProfile(mp2);
+        kbd.key(KEY_N, 1);
+        kbd.key(KEY_N, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_LEFTSHIFT, 1}, {KEY_LEFTSHIFT, 0}}));
+
+        // Saved and loaded unchanged.
+        const QString path = dir.filePath(QStringLiteral("macro.json"));
+        Config c;
+        c.load(path, nullptr);
+        c.setDevice(QStringLiteral("kbd"), mp2);
+        CHECK(c.save(nullptr));
+        Config loaded;
+        CHECK(loaded.load(path, nullptr));
+        CHECK(loaded.device(QStringLiteral("kbd")).bindings == mp2.bindings);
+
+        kbd.remapper->setProfile(kp);
+    }
+
+    // Combos: Ctrl + Shift + S sends F5 without the modifiers, which come
+    // back while still held; S alone and Ctrl + S stay as they were.
+    {
+        DeviceProfile cp = kp;
+        cp.bindings.insert(Keys::trigger(Keys::ModCtrl | Keys::ModShift, KEY_S), makeBinding({KEY_F5}));
+        cp.bindings.insert(KEY_CAPSLOCK, makeBinding({KEY_LEFTCTRL}));
+        cp.bindings.insert(Keys::trigger(Keys::ModCtrl, KEY_J), makeBinding({KEY_K}));
+        Binding mac;
+        mac.macro = {{MacroStep::Press, KEY_G}, {MacroStep::Delay, 250}, {MacroStep::Release, KEY_G}};
+        cp.bindings.insert(Keys::trigger(Keys::ModAlt, KEY_M), mac);
+        kbd.remapper->setProfile(cp);
+        takeOutput();
+
+        kbd.key(KEY_LEFTCTRL, 1);
+        kbd.key(KEY_LEFTSHIFT, 1);
+        kbd.key(KEY_S, 1);
+        kbd.key(KEY_S, 0);
+        kbd.key(KEY_LEFTSHIFT, 0);
+        kbd.key(KEY_LEFTCTRL, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_LEFTCTRL, 1}, {KEY_LEFTSHIFT, 1},
+                                           {KEY_LEFTCTRL, 0}, {KEY_LEFTSHIFT, 0}, {KEY_F5, 1},
+                                           {KEY_F5, 0}, {KEY_LEFTCTRL, 1}, {KEY_LEFTSHIFT, 1},
+                                           {KEY_LEFTSHIFT, 0}, {KEY_LEFTCTRL, 0}}));
+
+        kbd.key(KEY_S, 1);
+        kbd.key(KEY_S, 0);
+        kbd.key(KEY_LEFTCTRL, 1);
+        kbd.key(KEY_S, 1);
+        kbd.key(KEY_S, 0);
+        kbd.key(KEY_LEFTCTRL, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_S, 1}, {KEY_S, 0}, {KEY_LEFTCTRL, 1}, {KEY_S, 1},
+                                           {KEY_S, 0}, {KEY_LEFTCTRL, 0}}));
+
+        // A remapped modifier counts: Caps Lock is Ctrl here.
+        kbd.key(KEY_CAPSLOCK, 1);
+        kbd.key(KEY_J, 1);
+        kbd.key(KEY_J, 0);
+        kbd.key(KEY_CAPSLOCK, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_LEFTCTRL, 1}, {KEY_LEFTCTRL, 0}, {KEY_K, 1}, {KEY_K, 0},
+                                           {KEY_LEFTCTRL, 1}, {KEY_LEFTCTRL, 0}}));
+
+        // A macro on a combo: Alt stays up until the macro is done, even
+        // when the key is let go first, and only comes back if still held.
+        kbd.key(KEY_LEFTALT, 1);
+        kbd.key(KEY_M, 1);
+        kbd.key(KEY_M, 0);
+        settle(250);
+        kbd.key(KEY_LEFTALT, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_LEFTALT, 1}, {KEY_LEFTALT, 0}, {KEY_G, 1}, {KEY_G, 0},
+                                           {KEY_LEFTALT, 1}, {KEY_LEFTALT, 0}}));
+        kbd.key(KEY_LEFTALT, 1);
+        kbd.key(KEY_M, 1);
+        kbd.key(KEY_M, 0);
+        kbd.key(KEY_LEFTALT, 0);
+        settle(250);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_LEFTALT, 1}, {KEY_LEFTALT, 0}, {KEY_G, 1}, {KEY_LEFTALT, 0},
+                                           {KEY_G, 0}}));
+
+        // Saved by name.
+        Config c;
+        c.load(dir.filePath(QStringLiteral("combo.json")), nullptr);
+        c.setDevice(QStringLiteral("kbd"), cp);
+        CHECK(c.save(nullptr));
+        Config loaded;
+        CHECK(loaded.load(c.path(), nullptr));
+        CHECK(loaded.device(QStringLiteral("kbd")).bindings == cp.bindings);
+        CHECK(Keys::triggerName(Keys::trigger(Keys::ModCtrl | Keys::ModShift, KEY_S)) == QStringLiteral("Ctrl+Shift+KEY_S"));
+        CHECK(Keys::triggerLabel(Keys::trigger(Keys::ModCtrl | Keys::ModShift, KEY_S)) == QStringLiteral("Ctrl + Shift + S"));
+
+        kbd.remapper->setProfile(kp);
+    }
+
     // A device that goes away while its Hypershift key is held doesn't leave
     // the other devices stuck in the layer.
     mouse.key(BTN_SIDE, 1);
@@ -398,8 +564,8 @@ int main(int argc, char **argv)
 
         // Tap vs hold round trip.
         DeviceProfile th = kp;
-        th.bindings.insert(KEY_CAPSLOCK, Binding{{KEY_ESC}, 0, {KEY_LEFTCTRL}, 0});
-        th.bindings.insert(KEY_SPACE, Binding{{KEY_SPACE}, 0, {Keys::Hypershift}, 350});
+        th.bindings.insert(KEY_CAPSLOCK, makeBinding({KEY_ESC}, 0, {KEY_LEFTCTRL}, 0));
+        th.bindings.insert(KEY_SPACE, makeBinding({KEY_SPACE}, 0, {Keys::Hypershift}, 350));
         c.setDevice(QStringLiteral("kbd"), th);
         CHECK(c.save(nullptr));
         Config again;
@@ -443,7 +609,7 @@ int main(int argc, char **argv)
         const QString k = QStringLiteral("kbd");
         c.ensureDevice(k);
         DeviceProfile th = kp;
-        th.bindings.insert(KEY_CAPSLOCK, Binding{{KEY_ESC}, 0, {KEY_LEFTCTRL}, 350});
+        th.bindings.insert(KEY_CAPSLOCK, makeBinding({KEY_ESC}, 0, {KEY_LEFTCTRL}, 350));
         c.setDevice(k, th);
         c.setPrograms(k, QStringLiteral("Default"), {QStringLiteral("game.exe"), QStringLiteral("other")});
         const QByteArray file = c.exportProfile(k, QStringLiteral("Default"));

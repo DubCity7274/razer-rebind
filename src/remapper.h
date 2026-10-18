@@ -81,8 +81,16 @@ private:
     void pressAll(const QList<int> &targets);
     void releaseAll(const QList<int> &targets);
     void tap(const QList<int> &targets);
-    Binding lookup(int code, bool *bound);
+    // The binding for an input, preferring one for the modifiers held now;
+    // *combo gets those modifiers when it's a combo binding.
+    Binding lookup(int code, bool *bound, unsigned *combo = nullptr);
+    unsigned outputModifierMask() const;
+    void suspendModifiers(unsigned mask, int source);
+    void resumeModifiers();
     void startTurbo(int source, const Binding &binding);
+    void startMacro(int source, const Binding &binding);
+    void stopMacro(int source);
+    void runMacros();
     void runTurbo();
     long nextTurboTimeout() const; // nanoseconds until the next turbo edge, -1 if none
     bool matchHotkey(int code, bool trigger);
@@ -127,6 +135,19 @@ private:
         qint64 deadline = 0;  // monotonic ns when it becomes a hold
         QSet<int> pressedSince; // keys pressed while undecided
     };
+    struct Macro
+    {
+        QList<MacroStep> steps;
+        Binding::MacroMode mode = Binding::PlayOnce;
+        int index = 0;       // next step
+        qint64 next = 0;     // monotonic ns when the next step is due
+        QSet<int> down;      // keys the macro pressed and hasn't released
+        bool paced = false;  // its pauses add up to at least Keys::MacroMinLoopGap
+    };
+    QHash<int, Macro> m_macros; // source code -> playing macro
+    QSet<int> m_suspended;      // modifiers lifted for a combo while still held
+    int m_suspendSource = -1;   // the input whose combo lifted them
+
     std::optional<TapHold> m_tapHold;          // key pressed, not yet a tap or a hold
     std::vector<std::pair<int, int>> m_queued; // key events waiting for it: code, value
 };

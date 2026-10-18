@@ -4,6 +4,16 @@
 #include <QList>
 #include <QString>
 
+// One step of a macro.
+struct MacroStep
+{
+    enum Kind { Press, Release, Delay };
+    Kind kind = Press;
+    int value = 0; // key code for Press / Release, milliseconds for Delay
+
+    bool operator==(const MacroStep &o) const { return kind == o.kind && value == o.value; }
+};
+
 // What one key or button does instead of its normal job.
 struct Binding
 {
@@ -17,19 +27,36 @@ struct Binding
     // meanwhile) sends these instead, for as long as it's held.
     QList<int> hold;
     int holdTime = 0; // ms; 0 = Keys::HoldTimeDefault
+    // A macro, played instead of `targets` when not empty.
+    enum MacroMode { PlayOnce, RepeatWhileHeld, Toggle };
+    QList<MacroStep> macro;
+    MacroMode macroMode = PlayOnce;
 
     bool isHypershift() const;
     bool isTapHold() const { return !hold.isEmpty(); }
+    bool isMacro() const { return !macro.isEmpty(); }
     // Whether holding this input switches to the Hypershift layer.
     bool triggersHypershift() const;
     int effectiveHoldTime() const;
     bool operator==(const Binding &o) const
     {
-        return targets == o.targets && turbo == o.turbo && hold == o.hold && effectiveHoldTime() == o.effectiveHoldTime();
+        return targets == o.targets && turbo == o.turbo && hold == o.hold && effectiveHoldTime() == o.effectiveHoldTime()
+               && macro == o.macro && (macro.isEmpty() || macroMode == o.macroMode);
     }
 };
 
-// Source key code -> binding.
+inline Binding makeBinding(const QList<int> &targets, int turbo = 0, const QList<int> &hold = {}, int holdTime = 0)
+{
+    Binding b;
+    b.targets = targets;
+    b.turbo = turbo;
+    b.hold = hold;
+    b.holdTime = holdTime;
+    return b;
+}
+
+// Trigger -> binding. A trigger is an input code, optionally with the
+// modifiers that must be held for it (Keys::trigger()).
 using BindingMap = QHash<int, Binding>;
 
 namespace Keys {
@@ -50,6 +77,24 @@ constexpr int TurboDefault = 10;
 constexpr int HoldTimeMin = 100;
 constexpr int HoldTimeMax = 1000;
 constexpr int HoldTimeDefault = 200;
+
+// Macros: at most this many steps, and pauses up to a minute.
+constexpr int MacroMaxSteps = 500;
+constexpr int MacroMaxDelay = 60000;
+// A repeating macro without pauses still waits this long between rounds.
+constexpr int MacroMinLoopGap = 10;
+
+QString macroStepLabel(const MacroStep &step); // "Press A", "Wait 50 ms"
+QString macroSummary(const QList<MacroStep> &steps); // "16 steps, 6 key presses"
+
+// Triggers: an input code plus the modifiers (Keys::Modifier bits) that must
+// be held, exactly, for a binding to apply. Plain codes have none.
+constexpr int trigger(unsigned modifiers, int code) { return int(modifiers << 16) | code; }
+constexpr int triggerCode(int trigger) { return trigger & 0xffff; }
+constexpr unsigned triggerModifiers(int trigger) { return unsigned(trigger) >> 16; }
+QString triggerName(int trigger);           // "Ctrl+Shift+KEY_S"
+int triggerFromName(const QString &name);   // -1 when unknown
+QString triggerLabel(int trigger);          // "Ctrl + Shift + S"
 
 QString name(int code);              // "KEY_CAPSLOCK"
 int fromName(const QString &name);   // -1 when unknown

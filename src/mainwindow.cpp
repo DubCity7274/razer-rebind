@@ -610,8 +610,9 @@ void MainWindow::refreshState()
         html = QStringLiteral("<span style='color:#d33'>⚠ %1</span> — <a href='#'>%2</a>")
                    .arg(error.toHtmlEscaped(), tr("how to fix permissions"));
     } else if (r->isGrabbed()) {
-        html = tr("<span style='color:#2a2'>● Remapping active</span> — %n binding(s) applied", nullptr,
-                  int(p.bindings.size() + p.hypershift.size()));
+        const int n = int(p.bindings.size() + p.hypershift.size());
+        html = (n == 1 ? tr("<span style='color:#2a2'>● Remapping active</span> — 1 binding applied")
+                       : tr("<span style='color:#2a2'>● Remapping active</span> — %1 bindings applied").arg(n));
     } else if (r->isWaitingForRelease()) {
         html = tr("Waiting for all keys and buttons to be released before taking over the device…");
     } else if (!m_manager->remappingEnabled()) {
@@ -647,7 +648,7 @@ QString MainWindow::hypershiftKeysText() const
                 codes << it.key();
         std::sort(codes.begin(), codes.end());
         for (int code : codes)
-            keys << tr("%1 (%2)").arg(Keys::label(code), shortDeviceName(device));
+            keys << tr("%1 (%2)").arg(Keys::triggerLabel(code), shortDeviceName(device));
     }
     return keys.join(tr(" or "));
 }
@@ -680,9 +681,9 @@ void MainWindow::refreshBindings()
         const Binding &b = bindings[src];
         const int row = m_table->rowCount();
         m_table->insertRow(row);
-        auto *in = new QTableWidgetItem(Keys::label(src));
+        auto *in = new QTableWidgetItem(Keys::triggerLabel(src));
         in->setData(Qt::UserRole, src);
-        in->setToolTip(Keys::name(src));
+        in->setToolTip(Keys::triggerName(src));
         auto *out = new QTableWidgetItem(b.isHypershift() ? tr("Hypershift (hold)") : Keys::bindingLabel(b));
         if (b.targets.isEmpty())
             out->setForeground(QColor(0xd3, 0x44, 0x44));
@@ -713,7 +714,7 @@ void MainWindow::editBinding(int sourceCode)
         if (bindings.contains(sourceCode))
             dlg.setBinding(bindings.value(sourceCode));
         else if (Keys::isValidTarget(sourceCode))
-            dlg.setBinding(Binding{{sourceCode}, 0, {}, 0});
+            dlg.setBinding(makeBinding({sourceCode}, 0, {}, 0));
     }
     if (dlg.exec() != QDialog::Accepted)
         return;
@@ -721,7 +722,7 @@ void MainWindow::editBinding(int sourceCode)
     const int src = dlg.source();
     if (src != sourceCode && bindings.contains(src)
         && QMessageBox::question(this, tr("Replace binding?"),
-                                 tr("%1 already has a binding. Replace it?").arg(Keys::label(src)))
+                                 tr("%1 already has a binding. Replace it?").arg(Keys::triggerLabel(src)))
                != QMessageBox::Yes)
         return;
     storeBinding(sourceCode, src, dlg.binding());
@@ -738,7 +739,7 @@ void MainWindow::storeBinding(int oldSource, int source, const Binding &binding)
         bindings.remove(oldSource);
     // Mapping a key to exactly itself is the same as having no binding,
     // unless it overrides a Normal binding in the Hypershift layer.
-    const bool identity = binding == Binding{{source}, 0, {}, 0};
+    const bool identity = binding == makeBinding({source}, 0, {}, 0);
     if (identity && !(m_hypershiftLayer && p.bindings.contains(source)))
         bindings.remove(source);
     else

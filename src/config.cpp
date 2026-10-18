@@ -33,7 +33,7 @@ BindingMap bindingsFromJson(const QJsonObject &bindings)
     // has options.
     BindingMap out;
     for (auto b = bindings.begin(); b != bindings.end(); ++b) {
-        const int source = Keys::fromName(b.key());
+        const int source = Keys::triggerFromName(b.key());
         if (source < 0)
             continue;
         Binding binding;
@@ -57,12 +57,39 @@ BindingMap bindingsFromJson(const QJsonObject &bindings)
         };
         parse(keys, &binding.targets);
         parse(hold, &binding.hold);
+        if (b.value().isObject()) {
+            // "macro": [{"press": "KEY_A"}, {"delay": 50}, {"release": "KEY_A"}]
+            const QJsonObject o = b.value().toObject();
+            for (const QJsonValue &v : o.value(QStringLiteral("macro")).toArray()) {
+                const QJsonObject st = v.toObject();
+                MacroStep step;
+                if (st.contains(QStringLiteral("delay"))) {
+                    step = {MacroStep::Delay, std::clamp(st.value(QStringLiteral("delay")).toInt(), 0, Keys::MacroMaxDelay)};
+                } else {
+                    const bool press = st.contains(QStringLiteral("press"));
+                    const int code = Keys::fromName(st.value(press ? QStringLiteral("press") : QStringLiteral("release")).toString());
+                    if (!Keys::isValidTarget(code))
+                        continue;
+                    step = {press ? MacroStep::Press : MacroStep::Release, code};
+                }
+                if (binding.macro.size() < Keys::MacroMaxSteps)
+                    binding.macro << step;
+            }
+            const QString mode = o.value(QStringLiteral("macroMode")).toString();
+            binding.macroMode = mode == QLatin1String("while-held") ? Binding::RepeatWhileHeld
+                                : mode == QLatin1String("toggle")   ? Binding::Toggle
+                                                                    : Binding::PlayOnce;
+            if (binding.isMacro()) {
+                binding.turbo = 0;
+                binding.hold.clear();
+            }
+        }
         // A wheel notch can't be held; a tap can't be Hypershift.
-        if (Keys::isWheel(source))
+        if (Keys::isWheel(Keys::triggerCode(source)))
             binding.hold.clear();
         if (binding.isTapHold() && binding.targets.contains(Keys::Hypershift))
             valid = false;
-        if (binding.isHypershift() || binding.isTapHold() || Keys::isWheel(source))
+        if (binding.isHypershift() || binding.isTapHold() || Keys::isWheel(Keys::triggerCode(source)))
             binding.turbo = 0;
         if (!binding.isTapHold())
             binding.holdTime = 0;
@@ -82,8 +109,22 @@ QJsonObject bindingsToJson(const BindingMap &bindings)
         QJsonArray targets;
         for (int t : b.targets)
             targets.append(Keys::name(t));
-        if (b.turbo > 0 || b.isTapHold()) {
+        if (b.turbo > 0 || b.isTapHold() || b.isMacro()) {
             QJsonObject o{{QStringLiteral("keys"), targets}};
+            if (b.isMacro()) {
+                QJsonArray steps;
+                for (const MacroStep &st : b.macro) {
+                    switch (st.kind) {
+                    case MacroStep::Press: steps.append(QJsonObject{{QStringLiteral("press"), Keys::name(st.value)}}); break;
+                    case MacroStep::Release: steps.append(QJsonObject{{QStringLiteral("release"), Keys::name(st.value)}}); break;
+                    case MacroStep::Delay: steps.append(QJsonObject{{QStringLiteral("delay"), st.value}}); break;
+                    }
+                }
+                o.insert(QStringLiteral("macro"), steps);
+                if (b.macroMode != Binding::PlayOnce)
+                    o.insert(QStringLiteral("macroMode"), b.macroMode == Binding::Toggle ? QStringLiteral("toggle")
+                                                                                        : QStringLiteral("while-held"));
+            }
             if (b.turbo > 0)
                 o.insert(QStringLiteral("turbo"), b.turbo);
             if (b.isTapHold()) {
@@ -94,9 +135,9 @@ QJsonObject bindingsToJson(const BindingMap &bindings)
                 if (b.holdTime > 0 && b.holdTime != Keys::HoldTimeDefault)
                     o.insert(QStringLiteral("holdTime"), b.holdTime);
             }
-            out.insert(Keys::name(source), o);
+            out.insert(Keys::triggerName(source), o);
         } else {
-            out.insert(Keys::name(source), targets);
+            out.insert(Keys::triggerName(source), targets);
         }
     }
     return out;

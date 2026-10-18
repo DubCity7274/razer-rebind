@@ -102,6 +102,18 @@ QString comboLabel(const QList<int> &codes)
 
 QString bindingLabel(const Binding &binding, bool compact)
 {
+    if (binding.isMacro()) {
+        int keys = 0;
+        for (const MacroStep &st : binding.macro)
+            keys += st.kind == MacroStep::Press;
+        const QString mode = binding.macroMode == Binding::RepeatWhileHeld ? QStringLiteral(", repeats while held")
+                             : binding.macroMode == Binding::Toggle        ? QStringLiteral(", on/off")
+                                                                           : QString();
+        return compact ? QStringLiteral("Macro")
+                       : QStringLiteral("Macro: %1 key %2%3")
+                             .arg(keys)
+                             .arg(keys == 1 ? QStringLiteral("press") : QStringLiteral("presses"), mode);
+    }
     if (binding.isTapHold()) {
         const QString tap = binding.targets.isEmpty() ? QStringLiteral("nothing") : comboLabel(binding.targets);
         return compact ? QStringLiteral("%1 / %2").arg(tap, comboLabel(binding.hold))
@@ -111,6 +123,28 @@ QString bindingLabel(const Binding &binding, bool compact)
     if (binding.turbo > 0 && !binding.targets.isEmpty())
         text += (compact ? QStringLiteral(" ×%1/s") : QStringLiteral(" · turbo %1/s")).arg(binding.turbo);
     return text;
+}
+
+QString macroStepLabel(const MacroStep &step)
+{
+    switch (step.kind) {
+    case MacroStep::Press: return QStringLiteral("Press %1").arg(label(step.value));
+    case MacroStep::Release: return QStringLiteral("Release %1").arg(label(step.value));
+    case MacroStep::Delay: return QStringLiteral("Wait %1 ms").arg(step.value);
+    }
+    return {};
+}
+
+QString macroSummary(const QList<MacroStep> &steps)
+{
+    int presses = 0;
+    for (const MacroStep &st : steps)
+        presses += st.kind == MacroStep::Press;
+    return QStringLiteral("%1 %2, %3 key %4")
+        .arg(steps.size())
+        .arg(steps.size() == 1 ? QStringLiteral("step") : QStringLiteral("steps"))
+        .arg(presses)
+        .arg(presses == 1 ? QStringLiteral("press") : QStringLiteral("presses"));
 }
 
 bool isModifier(int code)
@@ -182,6 +216,44 @@ unsigned modifierBit(int code)
     case KEY_LEFTMETA: case KEY_RIGHTMETA: return ModSuper;
     default: return 0;
     }
+}
+
+namespace {
+const struct { unsigned bit; const char *name; } TriggerModifiers[] = {
+    {ModCtrl, "Ctrl"}, {ModShift, "Shift"}, {ModAlt, "Alt"}, {ModSuper, "Super"},
+};
+} // namespace
+
+QString triggerName(int t)
+{
+    QString out;
+    for (const auto &m : TriggerModifiers)
+        if (triggerModifiers(t) & m.bit)
+            out += QLatin1String(m.name) + QLatin1Char('+');
+    return out + name(triggerCode(t));
+}
+
+int triggerFromName(const QString &text)
+{
+    const QStringList parts = text.split(QLatin1Char('+'));
+    unsigned mods = 0;
+    for (int i = 0; i + 1 < parts.size(); ++i) {
+        bool known = false;
+        for (const auto &m : TriggerModifiers)
+            if (parts[i].compare(QLatin1String(m.name), Qt::CaseInsensitive) == 0) {
+                mods |= m.bit;
+                known = true;
+            }
+        if (!known)
+            return -1;
+    }
+    const int code = fromName(parts.last());
+    return code < 0 ? -1 : trigger(mods, code);
+}
+
+QString triggerLabel(int t)
+{
+    return shortcutLabel(triggerModifiers(t), triggerCode(t));
 }
 
 QString shortcutLabel(unsigned modifiers, int code)

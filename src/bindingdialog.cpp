@@ -2,9 +2,11 @@
 
 #include "inputdetector.h"
 #include "keys.h"
+#include "macrodialog.h"
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QCompleter>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -135,6 +137,7 @@ void KeyRecorder::focusOutEvent(QFocusEvent *e)
 BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, bool hypershiftLayer,
                              QWidget *parent)
     : QDialog(parent)
+    , m_manager(manager)
 {
     setWindowTitle(hypershiftLayer ? tr("Edit Hypershift binding — %1").arg(device.profileKey)
                                    : tr("Edit binding — %1").arg(device.profileKey));
@@ -146,16 +149,40 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, b
     auto *inputRow = new QHBoxLayout;
     inputRow->addWidget(m_source, 1);
     inputRow->addWidget(m_detect);
+    // Combos: only while exactly these modifiers are held.
+    m_srcCtrl = new QCheckBox(tr("Ctrl"));
+    m_srcShift = new QCheckBox(tr("Shift"));
+    m_srcAlt = new QCheckBox(tr("Alt"));
+    m_srcSuper = new QCheckBox(tr("Super"));
+    auto *comboRow = new QHBoxLayout;
+    comboRow->addWidget(new QLabel(tr("Only while holding:")));
+    for (QCheckBox *cb : {m_srcCtrl, m_srcShift, m_srcAlt, m_srcSuper}) {
+        cb->setToolTip(tr("For a combo such as Ctrl + Shift + S; the key alone keeps its own binding"));
+        comboRow->addWidget(cb);
+    }
+    comboRow->addStretch();
+    auto *inputLayout = new QVBoxLayout;
+    inputLayout->addLayout(inputRow);
+    inputLayout->addLayout(comboRow);
     auto *inputBox = new QGroupBox(hypershiftLayer
                                        ? tr("When this is pressed on the %1 while Hypershift is held").arg(device.profileKey)
                                        : tr("When this is pressed on the %1").arg(device.profileKey));
-    inputBox->setLayout(inputRow);
+    inputBox->setLayout(inputLayout);
 
     // Output
     m_remap = new QRadioButton(tr("Send key or shortcut"));
     m_disable = new QRadioButton(tr("Do nothing (disable)"));
     m_hypershift = new QRadioButton(tr("Hypershift: while held, all devices use their Hypershift bindings"));
     m_hypershift->setVisible(!hypershiftLayer);
+    m_macro = new QRadioButton(tr("Play a macro"));
+    m_macroEdit = new QPushButton(tr("Edit macro…"));
+    m_macroEdit->setAutoDefault(false);
+    m_macroMode = new QComboBox;
+    m_macroMode->addItem(tr("Play once"), Binding::PlayOnce);
+    m_macroMode->addItem(tr("Repeat while held"), Binding::RepeatWhileHeld);
+    m_macroMode->addItem(tr("Press to start, press again to stop"), Binding::Toggle);
+    m_macroSummary = new QLabel;
+    m_macroSummary->setStyleSheet(QStringLiteral("color: palette(placeholder-text);"));
     m_remap->setChecked(true);
     m_turbo = new QCheckBox(tr("Turbo: repeat while held"));
     m_turbo->setToolTip(tr("Press and release the output over and over for as long as the input is held"));
@@ -190,6 +217,13 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, b
     outLayout->addLayout(indent);
     outLayout->addWidget(m_disable);
     outLayout->addWidget(m_hypershift);
+    outLayout->addWidget(m_macro);
+    auto *macroRow = new QHBoxLayout;
+    macroRow->setContentsMargins(24, 0, 0, 0);
+    macroRow->addWidget(m_macroEdit);
+    macroRow->addWidget(m_macroMode);
+    macroRow->addWidget(m_macroSummary, 1);
+    outLayout->addLayout(macroRow);
     auto *outputBox = new QGroupBox(tr("Do this instead"));
     outputBox->setLayout(outLayout);
 
@@ -251,10 +285,21 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, b
 
     connect(m_source, &KeyPicker::codeChanged, this, &BindingDialog::updateState);
     connect(m_key, &KeyPicker::codeChanged, this, &BindingDialog::updateState);
-    for (QAbstractButton *b : std::initializer_list<QAbstractButton *>{m_remap, m_disable, m_hypershift, m_ctrl, m_shift, m_alt, m_super, m_turbo, m_holdKeys,
+    for (QAbstractButton *b : std::initializer_list<QAbstractButton *>{m_remap, m_disable, m_hypershift, m_macro, m_ctrl, m_shift, m_alt, m_super, m_turbo, m_holdKeys,
           m_holdHypershift, m_holdCtrl, m_holdShift, m_holdAlt, m_holdSuper})
         connect(b, &QAbstractButton::toggled, this, &BindingDialog::updateState);
     connect(m_holdBox, &QGroupBox::toggled, this, &BindingDialog::updateState);
+    connect(m_macroMode, &QComboBox::currentIndexChanged, this, &BindingDialog::updateState);
+    connect(m_macroEdit, &QPushButton::clicked, this, [this] {
+        // Detecting the input and recording would both listen to the device.
+        m_detector->stop();
+        MacroDialog dlg(m_manager, m_macroSteps, this);
+        if (dlg.exec() == QDialog::Accepted) {
+            m_macroSteps = dlg.steps();
+            m_macro->setChecked(true);
+        }
+        updateState();
+    });
     connect(m_holdKey, &KeyPicker::codeChanged, this, &BindingDialog::updateState);
     connect(m_turboRate, &QSpinBox::valueChanged, this, &BindingDialog::updateState);
     connect(m_record, &KeyRecorder::recorded, this, [this](const QList<int> &codes) {
@@ -268,22 +313,43 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, b
     m_detector = new InputDetector(manager, m_detect, this);
     m_detector->setDevice(device.profileKey);
     m_detector->setSwallow(keyboard, !keyboard);
-    connect(m_detector, &InputDetector::detected, this, [this](int code) { setSource(code); });
+    // Modifiers held while detecting make a combo; a modifier pressed on its
+    // own is the input itself.
+    m_detector->setCollectModifiers(true);
+    m_detector->setModifierAlone(true);
+    connect(m_detector, &InputDetector::detected, this,
+            [this](int code, unsigned mods) { setSource(Keys::trigger(mods, code)); });
+    for (QCheckBox *cb : {m_srcCtrl, m_srcShift, m_srcAlt, m_srcSuper})
+        connect(cb, &QCheckBox::toggled, this, &BindingDialog::updateState);
 
     m_key->setCode(0);
     m_source->setCurrentIndex(-1);
     updateState();
 }
 
-void BindingDialog::setSource(int code)
+void BindingDialog::setSource(int trigger)
 {
-    m_source->setCode(code);
+    m_source->setCode(Keys::triggerCode(trigger));
+    const unsigned mods = Keys::triggerModifiers(trigger);
+    m_srcCtrl->setChecked(mods & Keys::ModCtrl);
+    m_srcShift->setChecked(mods & Keys::ModShift);
+    m_srcAlt->setChecked(mods & Keys::ModAlt);
+    m_srcSuper->setChecked(mods & Keys::ModSuper);
     updateState();
 }
 
 void BindingDialog::setBinding(const Binding &binding)
 {
     const QList<int> &targets = binding.targets;
+    m_macroSteps = binding.macro;
+    m_macroMode->setCurrentIndex(m_macroMode->findData(binding.macroMode));
+    if (binding.isMacro()) {
+        m_holdBox->setChecked(false);
+        m_turbo->setChecked(false);
+        m_macro->setChecked(true);
+        updateState();
+        return;
+    }
     m_holdBox->setChecked(binding.isTapHold());
     if (binding.isTapHold()) {
         m_holdTime->setValue(binding.effectiveHoldTime());
@@ -325,24 +391,37 @@ void BindingDialog::setBinding(const Binding &binding)
 
 int BindingDialog::source() const
 {
-    return m_source->code();
+    const int code = m_source->code();
+    if (code <= 0 || Keys::isModifier(code))
+        return code;
+    unsigned mods = 0;
+    if (m_srcCtrl->isChecked()) mods |= Keys::ModCtrl;
+    if (m_srcShift->isChecked()) mods |= Keys::ModShift;
+    if (m_srcAlt->isChecked()) mods |= Keys::ModAlt;
+    if (m_srcSuper->isChecked()) mods |= Keys::ModSuper;
+    return Keys::trigger(mods, code);
 }
 
 Binding BindingDialog::binding() const
 {
     Binding b;
+    if (m_macro->isChecked()) {
+        b.macro = m_macroSteps;
+        b.macroMode = Binding::MacroMode(m_macroMode->currentData().toInt());
+        return b;
+    }
     if (m_hypershift->isChecked()) {
         b.targets = {Keys::Hypershift};
         return b;
     }
     b.targets = targets();
-    if (m_holdBox->isChecked() && !Keys::isWheel(source())) {
+    if (m_holdBox->isChecked() && !Keys::isWheel(Keys::triggerCode(source()))) {
         b.hold = holdTargets();
         b.holdTime = m_holdTime->value() == Keys::HoldTimeDefault ? 0 : m_holdTime->value();
         if (!b.hold.isEmpty())
             return b;
     }
-    if (m_remap->isChecked() && m_turbo->isChecked() && !Keys::isWheel(source()))
+    if (m_remap->isChecked() && m_turbo->isChecked() && !Keys::isWheel(Keys::triggerCode(source())))
         b.turbo = m_turboRate->value();
     return b;
 }
@@ -380,16 +459,30 @@ QList<int> BindingDialog::targets() const
 void BindingDialog::updateState()
 {
     const int src = source();
+    // A modifier can't need itself held; combos are for other keys.
+    const bool modifierInput = Keys::isModifier(m_source->code());
+    for (QCheckBox *cb : {m_srcCtrl, m_srcShift, m_srcAlt, m_srcSuper})
+        cb->setEnabled(!modifierInput);
     // A wheel notch can't be held, so it can't repeat or hold a layer.
-    const bool wheel = Keys::isWheel(src);
+    const bool wheel = Keys::isWheel(Keys::triggerCode(src));
     if (wheel && m_hypershift->isChecked())
         m_remap->setChecked(true);
+    // A macro is its own thing: no tap/hold or turbo on top. A wheel notch
+    // can't be held, so it can only play once.
+    const bool macro = m_macro->isChecked();
+    if (macro && m_holdBox->isChecked())
+        m_holdBox->setChecked(false);
+    if (wheel && m_macroMode->currentIndex() != 0)
+        m_macroMode->setCurrentIndex(0);
+    m_macroMode->setEnabled(macro && !wheel);
+    m_macroEdit->setEnabled(true);
+    m_macroSummary->setText(m_macroSteps.isEmpty() ? tr("no steps yet") : Keys::macroSummary(m_macroSteps));
     // A tap is over at once, so it can't hold the Hypershift layer or repeat.
-    const bool tapHold = m_holdBox->isChecked() && !wheel;
+    const bool tapHold = m_holdBox->isChecked() && !wheel && !macro;
     if (tapHold && m_hypershift->isChecked())
         m_remap->setChecked(true);
     m_hypershift->setEnabled(!wheel && !tapHold);
-    m_holdBox->setEnabled(!wheel);
+    m_holdBox->setEnabled(!wheel && !macro);
     const bool remap = m_remap->isChecked();
     for (QWidget *w : std::initializer_list<QWidget *>{m_ctrl, m_shift, m_alt, m_super, m_key, m_record})
         w->setEnabled(remap);
@@ -399,9 +492,11 @@ void BindingDialog::updateState()
         w->setEnabled(m_holdKeys->isChecked());
 
     const QList<int> out = targets();
-    QString left = src > 0 ? Keys::label(src).toHtmlEscaped() : tr("<i>choose an input</i>");
+    QString left = src > 0 ? Keys::triggerLabel(src).toHtmlEscaped() : tr("<i>choose an input</i>");
     QString right;
-    if (tapHold && !holdTargets().isEmpty())
+    if (macro)
+        right = m_macroSteps.isEmpty() ? tr("<i>record or add steps</i>") : Keys::bindingLabel(binding()).toHtmlEscaped();
+    else if (tapHold && !holdTargets().isEmpty())
         right = Keys::bindingLabel(binding()).toHtmlEscaped();
     else if (m_hypershift->isChecked())
         right = tr("<span style='color:#96e'>Hypershift while held</span>");
@@ -424,7 +519,11 @@ void BindingDialog::accept()
         QMessageBox::warning(this, windowTitle(), tr("Choose the key or shortcut to send, or pick \"Do nothing\"."));
         return;
     }
-    if (m_holdBox->isChecked() && !Keys::isWheel(source()) && (holdTargets().isEmpty() || (m_holdKeys->isChecked() && m_holdKey->code() < 0))) {
+    if (m_macro->isChecked() && m_macroSteps.isEmpty()) {
+        QMessageBox::warning(this, windowTitle(), tr("The macro has no steps yet. Use Edit macro to record or add them."));
+        return;
+    }
+    if (m_holdBox->isChecked() && !Keys::isWheel(Keys::triggerCode(source())) && (holdTargets().isEmpty() || (m_holdKeys->isChecked() && m_holdKey->code() < 0))) {
         QMessageBox::warning(this, windowTitle(), tr("Choose what holding it sends, or untick \"Do something else when held\"."));
         return;
     }

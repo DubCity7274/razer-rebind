@@ -35,6 +35,7 @@ void InputDetector::start()
         return;
     m_active = true;
     m_detected = -1;
+    m_loneModifier = -1;
     m_heldModifiers.clear();
     m_countdown = 10;
     m_button->setText(tr("Waiting… %1").arg(m_countdown));
@@ -64,16 +65,28 @@ void InputDetector::stop()
 
 void InputDetector::onInput(const QString &profileKey, int code, bool pressed)
 {
-    if (!m_active || (!m_device.isEmpty() && profileKey != m_device))
+    if (!m_active)
+        return;
+    const bool ownDevice = m_device.isEmpty() || profileKey == m_device;
+    if (!ownDevice && !(m_modifierAlone && Keys::isModifier(code)))
         return;
 
     if (m_collectModifiers && Keys::isModifier(code)) {
-        if (pressed)
+        if (pressed) {
             m_heldModifiers.insert(code);
-        else
+            m_loneModifier = ownDevice ? code : -1;
+        } else {
             m_heldModifiers.remove(code);
+            if (m_modifierAlone && code == m_loneModifier && m_detected < 0) {
+                m_detected = code;
+                emit detected(code, 0);
+                stop();
+            }
+        }
         return;
     }
+    if (pressed)
+        m_loneModifier = -1;
     if (pressed && m_detected < 0) {
         m_detected = code;
         unsigned mods = 0;

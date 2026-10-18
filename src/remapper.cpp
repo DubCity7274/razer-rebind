@@ -44,6 +44,10 @@ unsigned heldModifierMask()
 
 int modifierIndex(unsigned bit) { return __builtin_ctz(bit); }
 
+// In the order they're lifted and put back for combos.
+constexpr int ModifierCodes[] = {KEY_LEFTCTRL, KEY_RIGHTCTRL, KEY_LEFTSHIFT, KEY_RIGHTSHIFT,
+                                 KEY_LEFTALT,  KEY_RIGHTALT,  KEY_LEFTMETA,  KEY_RIGHTMETA};
+
 // Hypershift keys held across all Razer devices: holding one on the mouse
 // switches the keyboard to its Hypershift layer too.
 std::atomic<int> g_hypershiftHeld{0};
@@ -254,6 +258,7 @@ void Remapper::run()
         if (m_uinput && pfds.size() > m_sources.size() + 1 && (pfds.back().revents & POLLIN))
             forwardLeds();
         runTurbo();
+        runMacros();
         if (m_tapHold && monotonicNs() >= m_tapHold->deadline)
             resolveTapHold(true);
     }
@@ -317,6 +322,9 @@ void Remapper::ungrab()
             --g_hypershiftHeld;
     m_held.clear();
     m_turbo.clear();
+    m_macros.clear();
+    m_suspended.clear();
+    m_suspendSource = -1;
     m_tapHold.reset();
     m_queued.clear();
 
@@ -385,19 +393,74 @@ bool Remapper::readSource(const Source &src)
     }
 }
 
-Binding Remapper::lookup(int code, bool *bound)
+unsigned Remapper::outputModifierMask() const
 {
+    unsigned mask = 0;
+    for (auto it = m_outputCount.cbegin(); it != m_outputCount.cend(); ++it)
+        mask |= Keys::modifierBit(it.key());
+    return mask;
+}
+
+Binding Remapper::lookup(int code, bool *bound, unsigned *combo)
+{
+    // Modifiers held on any Razer device, or sent by this one (Caps Lock
+    // bound to Ctrl counts as Ctrl), select a combo binding such as
+    // Ctrl + Shift + S over the plain one.
+    const unsigned mods = Keys::isModifier(code) ? 0 : (heldModifierMask() | outputModifierMask());
+    const bool layer = g_hypershiftHeld.load() > 0;
+    if (combo)
+        *combo = 0;
     std::lock_guard lock(m_bindingsMutex);
-    if (g_hypershiftHeld.load() > 0) {
-        const auto it = m_hypershift.constFind(code);
-        if (it != m_hypershift.constEnd()) {
-            *bound = true;
-            return it.value();
-        }
+    auto find = [&](const BindingMap &map, int trigger) -> const Binding * {
+        const auto it = map.constFind(trigger);
+        return it != map.constEnd() ? &it.value() : nullptr;
+    };
+    const Binding *b = nullptr;
+    if (mods) {
+        if (layer)
+            b = find(m_hypershift, Keys::trigger(mods, code));
+        if (!b)
+            b = find(m_bindings, Keys::trigger(mods, code));
+        if (b && combo)
+            *combo = mods;
     }
-    const auto it = m_bindings.constFind(code);
-    *bound = it != m_bindings.constEnd();
-    return *bound ? it.value() : Binding();
+    if (!b && layer)
+        b = find(m_hypershift, code);
+    if (!b)
+        b = find(m_bindings, code);
+    *bound = b != nullptr;
+    return b ? *b : Binding();
+}
+
+void Remapper::suspendModifiers(unsigned mask, int source)
+{
+    // A combo's output shouldn't come out with the combo's own modifiers:
+    // Ctrl + Shift + S bound to F5 sends F5, not Ctrl + Shift + F5.
+    resumeModifiers();
+    for (int code : ModifierCodes)
+        if ((Keys::modifierBit(code) & mask) && m_outputCount.contains(code)) {
+            write(EV_KEY, code, 0);
+            m_suspended.insert(code);
+        }
+    m_suspendSource = source;
+    if (!m_suspended.isEmpty())
+        syn();
+}
+
+void Remapper::resumeModifiers()
+{
+    // Modifiers still held go back down, so holding Ctrl for the next
+    // shortcut still works.
+    bool any = false;
+    for (int code : ModifierCodes)
+        if (m_suspended.contains(code) && m_outputCount.contains(code)) {
+            write(EV_KEY, code, 1);
+            any = true;
+        }
+    m_suspended.clear();
+    m_suspendSource = -1;
+    if (any)
+        syn();
 }
 
 void Remapper::handleEvent(const input_event &ev)
@@ -467,6 +530,8 @@ void Remapper::resolveTapHold(bool hold)
     m_tapHold.reset();
     if (!hold) {
         tap(t.binding.targets);
+        if (t.code == m_suspendSource)
+            resumeModifiers();
     } else {
         m_held.insert(t.code, t.binding.hold);
         if (t.binding.hold == QList<int>{Keys::Hypershift})
@@ -488,9 +553,21 @@ void Remapper::processKey(int code, int value)
 {
     if (value == 1) {
         bool bound = false;
-        Binding b = lookup(code, &bound);
+        unsigned combo = 0;
+        Binding b = lookup(code, &bound, &combo);
         if (!bound)
             b.targets = {code};
+        if (combo)
+            suspendModifiers(combo, code);
+        if (b.isMacro()) {
+            m_held.insert(code, {});
+            const bool playing = m_macros.contains(code);
+            if (playing && b.macroMode == Binding::Toggle)
+                stopMacro(code);
+            else if (!playing)
+                startMacro(code, b);
+            return;
+        }
         if (b.isTapHold()) {
             m_tapHold = TapHold{code, b, monotonicNs() + qint64(b.effectiveHoldTime()) * 1000000, {}};
             return;
@@ -506,7 +583,9 @@ void Remapper::processKey(int code, int value)
         // Release exactly what this key pressed, even if its binding has
         // changed while it was held.
         const QList<int> targets = m_held.take(code);
-        if (targets == QList<int>{Keys::Hypershift}) {
+        if (auto m = m_macros.constFind(code); m != m_macros.constEnd() && m->mode == Binding::RepeatWhileHeld) {
+            stopMacro(code);
+        } else if (targets == QList<int>{Keys::Hypershift}) {
             --g_hypershiftHeld;
         } else if (auto t = m_turbo.find(code); t != m_turbo.end()) {
             if (t->down)
@@ -515,10 +594,15 @@ void Remapper::processKey(int code, int value)
         } else {
             releaseAll(targets);
         }
+        // A combo's modifiers come back once it's done; a macro still
+        // playing brings them back when it ends.
+        if (code == m_suspendSource && !m_macros.contains(code))
+            resumeModifiers();
     } else if (value == 2) {
         // Key repeat: pass it on for plain bindings. Turbo makes its own.
         const QList<int> targets = m_held.value(code);
-        if (!targets.isEmpty() && targets.last() != Keys::Hypershift && !m_turbo.contains(code))
+        if (!targets.isEmpty() && targets.last() != Keys::Hypershift && !m_turbo.contains(code)
+            && !m_suspended.contains(targets.last()))
             write(EV_KEY, targets.last(), 2);
     }
 }
@@ -536,7 +620,8 @@ void Remapper::handleWheel(const input_event &ev)
         return;
 
     bool bound = false;
-    const Binding b = lookup(pseudo, &bound);
+    unsigned combo = 0;
+    const Binding b = lookup(pseudo, &bound, &combo);
     if (!bound) {
         write(EV_REL, ev.code, ev.value);
         return;
@@ -544,9 +629,14 @@ void Remapper::handleWheel(const input_event &ev)
     // The kernel reports each notch twice (REL_WHEEL and the high-resolution
     // REL_WHEEL_HI_RES); act on the classic one and swallow both. A notch
     // can't be held, so Hypershift and turbo don't apply.
-    if (ev.code == REL_WHEEL && !b.isHypershift())
+    if (ev.code == REL_WHEEL && !b.isHypershift()) {
+        if (combo)
+            suspendModifiers(combo, pseudo);
         for (int i = 0; i < std::abs(ev.value); ++i)
             tap(b.targets);
+        if (combo)
+            resumeModifiers();
+    }
 }
 
 void Remapper::forwardLeds()
@@ -585,7 +675,8 @@ void Remapper::syn()
 
 void Remapper::press(int code)
 {
-    if (m_outputCount[code]++ == 0)
+    // A modifier lifted for a combo goes down again if something presses it.
+    if (m_outputCount[code]++ == 0 || m_suspended.remove(code))
         write(EV_KEY, code, 1);
 }
 
@@ -596,6 +687,7 @@ void Remapper::release(int code)
         return;
     if (--it.value() <= 0) {
         m_outputCount.erase(it);
+        m_suspended.remove(code);
         write(EV_KEY, code, 0);
     }
 }
@@ -667,13 +759,93 @@ void Remapper::runTurbo()
         syn();
 }
 
+void Remapper::startMacro(int source, const Binding &binding)
+{
+    Macro m;
+    m.steps = binding.macro;
+    m.mode = binding.macroMode;
+    m.next = monotonicNs();
+    int pause = 0;
+    for (const MacroStep &st : binding.macro)
+        if (st.kind == MacroStep::Delay)
+            pause += st.value;
+    m.paced = pause >= Keys::MacroMinLoopGap;
+    m_macros.insert(source, m);
+    runMacros(); // the first steps go out right away
+}
+
+void Remapper::stopMacro(int source)
+{
+    // Let go of whatever it holds, so nothing stays stuck down.
+    const Macro m = m_macros.take(source);
+    for (int code : m.down)
+        release(code);
+    if (!m.down.isEmpty())
+        syn();
+    if (source == m_suspendSource && !m_held.contains(source))
+        resumeModifiers();
+}
+
+void Remapper::runMacros()
+{
+    if (m_macros.isEmpty())
+        return;
+    const qint64 now = monotonicNs();
+    QList<int> finished;
+    for (auto it = m_macros.begin(); it != m_macros.end(); ++it) {
+        Macro &m = *it;
+        while (m.next <= now) {
+            if (m.index >= m.steps.size()) {
+                if (m.mode == Binding::PlayOnce) {
+                    finished << it.key();
+                    break;
+                }
+                m.index = 0;
+                if (!m.paced) {
+                    // Without pauses a repeating macro would spin a core.
+                    m.next = now + qint64(Keys::MacroMinLoopGap) * 1000000;
+                    break;
+                }
+                continue;
+            }
+            const MacroStep &st = m.steps[m.index++];
+            switch (st.kind) {
+            case MacroStep::Press:
+                if (!m.down.contains(st.value)) {
+                    press(st.value);
+                    m.down.insert(st.value);
+                    syn();
+                }
+                break;
+            case MacroStep::Release:
+                // Only what the macro pressed: a recording can start with the
+                // release of a key that was down before it.
+                if (m.down.remove(st.value)) {
+                    release(st.value);
+                    syn();
+                }
+                break;
+            case MacroStep::Delay:
+                // Keep time from the schedule, not from when we woke, but
+                // don't rush to catch up after a stall.
+                m.next = std::max(m.next, now - 5000000) + qint64(st.value) * 1000000;
+                break;
+            }
+        }
+    }
+    for (int source : std::as_const(finished))
+        stopMacro(source);
+}
+
 long Remapper::nextTurboTimeout() const
 {
-    if (m_turbo.isEmpty())
+    if (m_turbo.isEmpty() && m_macros.isEmpty())
         return -1;
     qint64 next = std::numeric_limits<qint64>::max();
     for (const Turbo &t : m_turbo)
         next = std::min(next, t.next);
+    for (const Macro &m : m_macros)
+        next = std::min(next, m.next);
     return long(std::max<qint64>(0, next - monotonicNs()));
 }
 
