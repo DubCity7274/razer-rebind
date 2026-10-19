@@ -16,6 +16,7 @@ qt_add_executable(razer-rebind
     src/keys.cpp src/keys.h
     src/razerdevice.cpp src/razerdevice.h
     src/sensor.cpp src/sensor.h
+    src/lighting.cpp src/lighting.h
     src/remapper.cpp src/remapper.h
     src/remapmanager.cpp src/remapmanager.h
     src/config.cpp src/config.h
@@ -28,6 +29,7 @@ qt_add_executable(razer-rebind
     src/hotkeydialog.cpp src/hotkeydialog.h
     src/programsdialog.cpp src/programsdialog.h
     src/sensorpanel.cpp src/sensorpanel.h
+    src/lightingpanel.cpp src/lightingpanel.h
     src/deviceview.cpp src/deviceview.h
     src/bindingdialog.cpp src/bindingdialog.h
     src/macrodialog.cpp src/macrodialog.h
@@ -48,16 +50,16 @@ target_link_libraries(razer-rebind PRIVATE Qt6::Widgets Qt6::Network Qt6::DBus P
 include(CTest)
 if(BUILD_TESTING)
     add_executable(remapper_test tests/remapper_test.cpp
-        src/remapper.cpp src/keys.cpp src/config.cpp src/razerdevice.cpp src/sensor.cpp)
+        src/remapper.cpp src/keys.cpp src/config.cpp src/razerdevice.cpp src/sensor.cpp src/lighting.cpp)
     target_include_directories(remapper_test PRIVATE src)
-    target_link_libraries(remapper_test PRIVATE Qt6::Core Qt6::DBus PkgConfig::LIBEVDEV Threads::Threads)
+    target_link_libraries(remapper_test PRIVATE Qt6::Core Qt6::Gui Qt6::DBus PkgConfig::LIBEVDEV Threads::Threads)
     add_test(NAME remapper COMMAND remapper_test)
 
     add_executable(autoswitch_test tests/autoswitch_test.cpp
         src/autoswitcher.cpp src/processes.cpp src/remapmanager.cpp src/remapper.cpp
-        src/keys.cpp src/config.cpp src/razerdevice.cpp src/sensor.cpp src/notifications.cpp)
+        src/keys.cpp src/config.cpp src/razerdevice.cpp src/sensor.cpp src/lighting.cpp src/notifications.cpp)
     target_include_directories(autoswitch_test PRIVATE src)
-    target_link_libraries(autoswitch_test PRIVATE Qt6::Core Qt6::Network Qt6::DBus PkgConfig::LIBEVDEV Threads::Threads)
+    target_link_libraries(autoswitch_test PRIVATE Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus PkgConfig::LIBEVDEV Threads::Threads)
     add_test(NAME autoswitch COMMAND autoswitch_test)
 endif()
 

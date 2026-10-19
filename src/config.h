@@ -1,6 +1,7 @@
 #pragma once
 
 #include "keys.h"
+#include "lighting.h"
 #include "sensor.h"
 
 #include <QHash>
@@ -21,6 +22,8 @@ struct DeviceProfile
     BindingMap hypershift;
     // DPI stages and polling rate for mice; not valid = leave the mouse alone.
     SensorSettings sensor;
+    // Lighting effect; not valid = leave the lighting alone.
+    LightingSettings lighting;
 
     bool hasHypershiftKey() const;
 };
@@ -98,6 +101,8 @@ public:
     // Give every profile of the device that has no sensor settings yet these,
     // so changing one profile's DPI doesn't carry over to the others.
     void fillSensor(const QString &device, const SensorSettings &settings);
+    // The same for lighting.
+    void fillLighting(const QString &device, const LightingSettings &settings);
 
     // A new profile starts with `copyFrom`'s bindings, if given, and with the
     // sensor settings of `copyFrom` or the active profile.
@@ -126,6 +131,7 @@ private:
         BindingMap hypershift;
         QStringList programs;
         SensorSettings sensor;
+        LightingSettings lighting;
     };
     struct DeviceSettings
     {

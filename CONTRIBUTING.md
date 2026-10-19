@@ -102,6 +102,12 @@ saved state stays in step; otherwise the `dpi_stages`, `dpi` and `poll_rate`
 sysfs attributes are written directly. They're written only when the active
 profile's values differ from the last ones written to that mouse.
 
+Lighting works the same way through the daemon's `razer.device.lighting.*`
+interfaces (the `logo` one on mice), falling back to the `matrix_effect_*`
+attributes. Only the daemon can say which effect is on, so without it the
+current lighting isn't shown until one is chosen. Ripple is animated by the
+daemon and needs it.
+
 Automatic profile switching reads `/proc` every two seconds for the user's
 processes. A process is known by argv[0] (which holds the Windows path for
 Wine and Proton games), its executable and its kernel name. Before switching,
@@ -140,6 +146,8 @@ are polled once a minute on a background thread.
 | `src/config.*` | Per-device profiles, hotkeys, settings; JSON storage and migration |
 | `src/sensor.*` | Mouse DPI stages and polling rate, through openrazer-daemon or sysfs |
 | `src/sensorpanel.*` | The DPI / polling rate bar in the main window |
+| `src/lighting.*` | Lighting effects and brightness, through openrazer-daemon or sysfs |
+| `src/lightingpanel.*` | The lighting bar in the main window |
 | `src/processes.*` | The user's running programs, read from `/proc` |
 | `src/autoswitcher.*` | Switches profiles while their linked programs run |
 | `src/programsdialog.*` | Editor for a profile's programs, with a running-program picker |

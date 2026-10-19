@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.0 (unreleased)
+
+### New features
+
+- **Lighting.** A Lighting bar sets each device's effect (off, static,
+  breathing, spectrum, wave, reactive, starlight, ripple) with its colours,
+  speed, direction and brightness. Each device lists the effects it
+  supports: a keyboard's keys, a mouse's logo.
+- **Per-profile lighting.** Lighting is saved with the profile like DPI, so
+  switching profiles or starting a linked game changes it too.
+
 ## 0.9.0 (2026-10-19)
 
 ### New features

@@ -19,6 +19,7 @@ class QTableWidget;
 class DeviceView;
 class GenericView;
 class SensorPanel;
+class LightingPanel;
 class AutoSwitcher;
 class BatteryMonitor;
 class Config;
@@ -88,6 +89,7 @@ private:
     GenericView *m_genericView;
     QTableWidget *m_table;
     SensorPanel *m_sensor;
+    LightingPanel *m_lighting;
     QPushButton *m_editButton;
     QPushButton *m_removeButton;
     QPushButton *m_clearButton;

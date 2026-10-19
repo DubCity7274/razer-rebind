@@ -2,6 +2,7 @@
 
 #include "notifications.h"
 #include "remapper.h"
+#include "lighting.h"
 #include "sensor.h"
 
 #include <QDBusConnection>
@@ -205,6 +206,8 @@ void RemapManager::rescan()
     // its DPI set again when it's back.
     for (auto it = m_appliedSensor.begin(); it != m_appliedSensor.end();)
         it = byPath.contains(it.key()) ? std::next(it) : m_appliedSensor.erase(it);
+    for (auto it = m_appliedLighting.begin(); it != m_appliedLighting.end();)
+        it = byPath.contains(it.key()) ? std::next(it) : m_appliedLighting.erase(it);
 
     m_devices = found;
     applyProfile();
@@ -268,12 +271,27 @@ void RemapManager::applyProfile()
             emit message(tr("Could not set the DPI of the %1: %2").arg(d.profileKey, error));
         m_appliedSensor.insert(d.hidPath, wanted);
     }
+    // Lighting likewise.
+    for (const RazerDevice &d : std::as_const(m_devices)) {
+        const LightingSettings wanted = m_config->device(d.profileKey).lighting;
+        if (!wanted.isValid() || m_appliedLighting.value(d.hidPath) == wanted)
+            continue;
+        QString error;
+        if (!Lighting(d).write(wanted, &error))
+            emit message(tr("Could not set the lighting of the %1: %2").arg(d.profileKey, error));
+        m_appliedLighting.insert(d.hidPath, wanted);
+    }
     emit stateChanged();
 }
 
 void RemapManager::markSensorApplied(const QString &hidPath, const SensorSettings &settings)
 {
     m_appliedSensor.insert(hidPath, settings);
+}
+
+void RemapManager::markLightingApplied(const QString &hidPath, const LightingSettings &settings)
+{
+    m_appliedLighting.insert(hidPath, settings);
 }
 
 // --- remote control ----------------------------------------------------------

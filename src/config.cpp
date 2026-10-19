@@ -171,6 +171,37 @@ QJsonObject sensorToJson(const SensorSettings &s)
     return o;
 }
 
+LightingSettings lightingFromJson(const QJsonObject &o)
+{
+    LightingSettings l;
+    l.effect = LightingSettings::effectFromId(o.value(QStringLiteral("effect")).toString());
+    const QString colours = o.value(QStringLiteral("colours")).toString();
+    l.colours = colours == QLatin1String("two")      ? LightingSettings::TwoColours
+                : colours == QLatin1String("random") ? LightingSettings::RandomColours
+                                                     : LightingSettings::OneColour;
+    if (const QColor c(o.value(QStringLiteral("colour1")).toString()); c.isValid())
+        l.colour1 = c;
+    if (const QColor c(o.value(QStringLiteral("colour2")).toString()); c.isValid())
+        l.colour2 = c;
+    l.speed = std::clamp(o.value(QStringLiteral("speed")).toInt(2), 1, 3);
+    l.direction = o.value(QStringLiteral("direction")).toString() == QLatin1String("left") ? 2 : 1;
+    l.brightness = std::clamp(o.value(QStringLiteral("brightness")).toInt(100), 0, 100);
+    return l;
+}
+
+QJsonObject lightingToJson(const LightingSettings &l)
+{
+    return {{QStringLiteral("effect"), LightingSettings::effectId(l.effect)},
+            {QStringLiteral("colours"), l.colours == LightingSettings::TwoColours      ? QStringLiteral("two")
+                                        : l.colours == LightingSettings::RandomColours ? QStringLiteral("random")
+                                                                                       : QStringLiteral("one")},
+            {QStringLiteral("colour1"), l.colour1.name()},
+            {QStringLiteral("colour2"), l.colour2.name()},
+            {QStringLiteral("speed"), l.speed},
+            {QStringLiteral("direction"), l.direction == 2 ? QStringLiteral("left") : QStringLiteral("right")},
+            {QStringLiteral("brightness"), l.brightness}};
+}
+
 QString tr(const char *text)
 {
     return QCoreApplication::translate("Hotkey", text);
@@ -279,7 +310,7 @@ bool Config::load(const QString &path, QString *error)
                 const QJsonObject d = p.value(QStringLiteral("devices")).toObject().value(key).toObject();
                 if (name.isEmpty() || findProfile(key, name))
                     continue;
-                ds.profiles << Profile{name, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}, {}, {}};
+                ds.profiles << Profile{name, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}, {}, {}, {}};
                 if (name == active) {
                     ds.active = name;
                     ds.enabled = d.value(QStringLiteral("enabled")).toBool(true);
@@ -293,13 +324,13 @@ bool Config::load(const QString &path, QString *error)
             const QJsonObject d = it.value().toObject();
             DeviceSettings &ds = addDevice(it.key());
             ds.enabled = d.value(QStringLiteral("enabled")).toBool(true);
-            ds.profiles << Profile{DefaultProfile, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}, {}, {}};
+            ds.profiles << Profile{DefaultProfile, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}, {}, {}, {}};
         }
     }
 
     for (auto it = m_devices.begin(); it != m_devices.end(); ++it) {
         if (it->profiles.isEmpty())
-            it->profiles << Profile{DefaultProfile, {}, {}, {}, {}};
+            it->profiles << Profile{DefaultProfile, {}, {}, {}, {}, {}};
         if (!findProfile(it.key(), it->active))
             it->active = it->profiles.first().name;
     }
@@ -400,7 +431,8 @@ Config::Profile Config::profileFromJson(const QJsonObject &p)
     return Profile{p.value(QStringLiteral("name")).toString().trimmed(),
                    bindingsFromJson(p.value(QStringLiteral("bindings")).toObject()),
                    bindingsFromJson(p.value(QStringLiteral("hypershift")).toObject()), programs,
-                   sensorFromJson(p.value(QStringLiteral("sensor")).toObject())};
+                   sensorFromJson(p.value(QStringLiteral("sensor")).toObject()),
+                   lightingFromJson(p.value(QStringLiteral("lighting")).toObject())};
 }
 
 QJsonObject Config::profileToJson(const Profile &p)
@@ -412,6 +444,8 @@ QJsonObject Config::profileToJson(const Profile &p)
         o.insert(QStringLiteral("programs"), QJsonArray::fromStringList(p.programs));
     if (p.sensor.isValid())
         o.insert(QStringLiteral("sensor"), sensorToJson(p.sensor));
+    if (p.lighting.isValid())
+        o.insert(QStringLiteral("lighting"), lightingToJson(p.lighting));
     return o;
 }
 
@@ -478,9 +512,12 @@ QString Config::importProfile(const QString &device, const QByteArray &data, QSt
                                     }),
                      p.programs.end());
     // Without saved DPI, switching to it shouldn't change the mouse.
-    if (!p.sensor.isValid())
-        if (const Profile *active = findProfile(device, activeProfile(device)))
+    if (const Profile *active = findProfile(device, activeProfile(device))) {
+        if (!p.sensor.isValid())
             p.sensor = active->sensor;
+        if (!p.lighting.isValid())
+            p.lighting = active->lighting;
+    }
     m_devices[device].profiles << p;
     return p.name;
 }
@@ -491,7 +528,7 @@ bool Config::ensureDevice(const QString &device)
         return false;
     m_deviceOrder << device;
     DeviceSettings &ds = m_devices[device];
-    ds.profiles << Profile{DefaultProfile, {}, {}, {}, {}};
+    ds.profiles << Profile{DefaultProfile, {}, {}, {}, {}, {}};
     ds.active = DefaultProfile;
     return true;
 }
@@ -518,6 +555,7 @@ DeviceProfile Config::device(const QString &device) const
         out.bindings = p->bindings;
         out.hypershift = p->hypershift;
         out.sensor = p->sensor;
+        out.lighting = p->lighting;
     }
     return out;
 }
@@ -532,6 +570,7 @@ void Config::setDevice(const QString &device, const DeviceProfile &profile)
             p.bindings = profile.bindings;
             p.hypershift = profile.hypershift;
             p.sensor = profile.sensor;
+            p.lighting = profile.lighting;
         }
 }
 
@@ -609,6 +648,13 @@ void Config::fillSensor(const QString &device, const SensorSettings &settings)
             p.sensor = settings;
 }
 
+void Config::fillLighting(const QString &device, const LightingSettings &settings)
+{
+    for (Profile &p : m_devices[device].profiles)
+        if (!p.lighting.isValid())
+            p.lighting = settings;
+}
+
 void Config::setAutoRestore(const QString &device, const QString &profile)
 {
     if (m_devices.contains(device))
@@ -624,8 +670,9 @@ bool Config::addProfile(const QString &device, const QString &name, const QStrin
     // A copy doesn't take the programs: two profiles claiming one game would fight.
     const Profile *active = findProfile(device, activeProfile(device));
     const SensorSettings sensor = source ? source->sensor : active ? active->sensor : SensorSettings();
-    m_devices[device].profiles << (source ? Profile{name, source->bindings, source->hypershift, {}, sensor}
-                                          : Profile{name, {}, {}, {}, sensor});
+    const LightingSettings lighting = source ? source->lighting : active ? active->lighting : LightingSettings();
+    m_devices[device].profiles << (source ? Profile{name, source->bindings, source->hypershift, {}, sensor, lighting}
+                                          : Profile{name, {}, {}, {}, sensor, lighting});
     return true;
 }
 

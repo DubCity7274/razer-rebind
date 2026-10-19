@@ -656,6 +656,42 @@ int main(int argc, char **argv)
         CHECK(loaded.device(m).sensor == p.sensor);
     }
 
+    // Lighting: saved per profile, the first one set copied to the other
+    // profiles, new profiles starting from the active one's.
+    {
+        Config c;
+        c.load(dir.filePath(QStringLiteral("light.json")), nullptr);
+        const QString k = QStringLiteral("kbd");
+        c.ensureDevice(k);
+        c.addProfile(k, QStringLiteral("Game"));
+        LightingSettings before;
+        before.effect = LightingSettings::Spectrum;
+        before.brightness = 75;
+        c.fillLighting(k, before);
+        c.setActiveProfile(k, QStringLiteral("Game"));
+        DeviceProfile p = c.device(k);
+        CHECK(p.lighting == before);
+        p.lighting.effect = LightingSettings::Starlight;
+        p.lighting.colours = LightingSettings::TwoColours;
+        p.lighting.colour1 = QColor(255, 0, 0);
+        p.lighting.colour2 = QColor(0, 0, 255);
+        p.lighting.speed = 3;
+        p.lighting.direction = 2;
+        p.lighting.brightness = 40;
+        c.setDevice(k, p);
+        c.addProfile(k, QStringLiteral("Game 2"));
+        CHECK(c.save(nullptr));
+        Config loaded;
+        CHECK(loaded.load(c.path(), nullptr));
+        CHECK(loaded.device(k).lighting == p.lighting);
+        loaded.setActiveProfile(k, QStringLiteral("Default"));
+        CHECK(loaded.device(k).lighting == before);
+        loaded.setActiveProfile(k, QStringLiteral("Game 2"));
+        CHECK(loaded.device(k).lighting == p.lighting);
+        CHECK(LightingSettings::effectFromId(QStringLiteral("starlight")) == LightingSettings::Starlight);
+        CHECK(LightingSettings::effectFromId(QStringLiteral("nonsense")) == LightingSettings::None);
+    }
+
     // Export and import: everything comes back, under a free name, without
     // programs another profile already has.
     {

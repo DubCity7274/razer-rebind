@@ -19,6 +19,9 @@ drivers, runs on X11 and Wayland, and needs no root once installed.
   Ctrl; or tap Space for a space and hold it for Hypershift.
 - **Turbo:** a key or button repeats as long as you hold it, from 1 to 50
   presses per second.
+- **Lighting:** static, breathing, spectrum, wave, reactive, starlight and
+  ripple effects with your colours and brightness, saved per profile, so a
+  game's profile can bring its own colours.
 - **DPI and polling rate:** set up to five DPI stages for the button under
   the mouse, and the polling rate. Each profile keeps its own, so a game's
   profile can bring its own sensitivity.
@@ -68,8 +71,10 @@ them.
 
 - Linux with the **OpenRazer kernel modules** loaded (`razerkbd`,
   `razermouse`). See [OpenRazer's install guide](https://openrazer.github.io/#download).
-  The OpenRazer daemon and frontends such as Polychromatic are optional and
-  can run alongside.
+  The OpenRazer daemon (`openrazer-daemon`) is optional, but recommended:
+  with it, DPI and lighting are kept when a device reconnects, and the
+  Ripple effect works. Frontends such as Polychromatic can run alongside,
+  though they change the same lighting.
 - A desktop session (KDE Plasma, GNOME, or others) on X11 or Wayland.
 
 ## Installation
@@ -278,6 +283,30 @@ hand, by hotkey or when a game starts, changes them too. The first time you
 change them, your other profiles keep the mouse's current settings. With
 openrazer-daemon running, settings go through it, so they stick when the
 mouse reconnects; without it, Razer Rebind sets them again itself.
+
+### Lighting
+
+The **Lighting** bar above the bindings sets the selected device's effect:
+a keyboard's keys, or a mouse's logo. Pick an effect and only the settings
+it uses appear: one or two colours or random ones, speed, wave direction,
+and brightness. Changes apply right away.
+
+| Effect | Settings |
+|---|---|
+| Off | |
+| Static | colour |
+| Breathing | one colour, two colours, or random |
+| Spectrum | cycles through all colours |
+| Wave | direction (keyboards) |
+| Reactive | colour, and how long a pressed key stays lit |
+| Starlight | one colour, two colours, or random, and speed (keyboards) |
+| Ripple | colour or random (keyboards, needs openrazer-daemon) |
+
+Each device only lists the effects it supports. Like DPI, lighting is saved
+with the active profile, so switching profiles or starting a linked game
+changes it; the first time you change it, your other profiles keep the
+current lighting. With openrazer-daemon running, lighting goes through it
+and is restored when the device reconnects.
 
 ### Switching profiles automatically
 
