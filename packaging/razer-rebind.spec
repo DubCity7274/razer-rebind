@@ -1,5 +1,5 @@
 Name:           razer-rebind
-Version:        0.8.0
+Version:        0.9.0
 Release:        1%{?dist}
 Summary:        Key and button rebinding for Razer keyboards and mice (OpenRazer)
 
@@ -63,6 +63,10 @@ udevadm trigger --subsystem-match=input --subsystem-match=misc --action=change >
 %{_udevrulesdir}/70-%{name}.rules
 
 %changelog
+* Mon Oct 19 2026 dub <111620773+DubCity7274@users.noreply.github.com> - 0.9.0-1
+- Macros, key combos as binding inputs, and command bindings
+- Generic keycap view for devices without a picture
+
 * Sat Oct 17 2026 dub <111620773+DubCity7274@users.noreply.github.com> - 0.8.0-1
 - Tap vs hold bindings
 - Import and export profiles

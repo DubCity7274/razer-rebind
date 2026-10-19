@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.0 (unreleased)
+## 0.9.0 (2026-10-19)
 
 ### New features
 
@@ -10,13 +10,11 @@
   reordered and removed by hand. A macro can play once per press, repeat
   while held, or start and stop with each press. Keys a macro holds are let
   go when it stops.
-
 - **Combos as inputs.** A binding can be for a key combo such as
   Ctrl + Shift + S, separate from the key on its own. Tick the modifiers
   under **Only while holding**, or hold them while pressing **Detect**. The
   combo's modifiers are lifted while its output goes out, so it can send a
   clean F5 or play a macro, and go back down if still held.
-
 - **Run a command.** A binding can run a program, script or shell command,
   once per press and in the background. Importing a profile that runs
   commands lists them and asks first.
