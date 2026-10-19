@@ -19,6 +19,7 @@ RemapManager::RemapManager(Config *config, QObject *parent)
     : QObject(parent)
     , m_config(config)
 {
+    m_sensorQueue.setMaxThreadCount(1);
     // Event nodes come and go when devices are plugged in, the wireless mouse
     // reconnects, or the OpenRazer modules are reloaded. udev needs a moment
     // to set permissions on new nodes, hence the delay.
@@ -40,6 +41,7 @@ RemapManager::RemapManager(Config *config, QObject *parent)
 
 RemapManager::~RemapManager()
 {
+    m_sensorQueue.waitForDone();
     // Stop explicitly so every grab is released and held keys are let go
     // before the virtual devices disappear.
     qDeleteAll(m_remappers);
@@ -157,6 +159,81 @@ void RemapManager::switchProfiles(const QHash<QString, QString> &profiles, const
         notify(changed.join(QLatin1Char('\n')), reason);
 }
 
+void RemapManager::handleDpi(const RazerDevice &from, int action, int clutchDpi, bool pressed)
+{
+    QList<RazerDevice> mice;
+    for (const RazerDevice &d : std::as_const(m_devices))
+        if (d.kind == RazerDevice::Mouse && (from.kind != RazerDevice::Mouse || d.hidPath == from.hidPath)
+            && Sensor(d).isSupported())
+            mice << d;
+
+    for (const RazerDevice &d : std::as_const(mice)) {
+        if (action == Binding::DpiClutch) {
+            if (pressed) {
+                if (m_clutchRestore.contains(d.hidPath))
+                    continue; // already held by another input
+                // Going back to the profile's DPI saves reading the mouse
+                // first, which would double the delay.
+                const SensorSettings saved = m_config->device(d.profileKey).sensor;
+                auto restore = std::make_shared<std::atomic<int>>(saved.isValid() ? saved.dpi() : -1);
+                m_clutchRestore.insert(d.hidPath, restore);
+                m_sensorQueue.start([d, restore, clutchDpi] {
+                    const Sensor sensor(d);
+                    if (restore->load() <= 0)
+                        restore->store(sensor.currentDpi());
+                    sensor.setCurrentDpi(clutchDpi);
+                });
+            } else if (auto restore = m_clutchRestore.take(d.hidPath)) {
+                m_sensorQueue.start([d, restore] {
+                    if (restore->load() > 0)
+                        Sensor(d).setCurrentDpi(restore->load());
+                });
+            }
+            continue;
+        }
+        if (!pressed)
+            continue;
+        // A stage step: read where the mouse is (its DPI button may have
+        // moved it), step, and keep the new stage in the profile.
+        m_sensorQueue.start([this, d, action] {
+            const Sensor sensor(d);
+            SensorSettings now;
+            if (!sensor.read(&now) || now.stages.isEmpty())
+                return;
+            const int n = int(now.stages.size());
+            const int from = now.activeStage;
+            now.activeStage = action == Binding::DpiStageUp     ? std::min(n - 1, from + 1)
+                              : action == Binding::DpiStageDown ? std::max(0, from - 1)
+                                                                : (from + 1) % n;
+            if (now.activeStage == from && n > 1 && action != Binding::DpiStageCycle) {
+                QMetaObject::invokeMethod(this, [this, d, now, n] {
+                    emit message(tr("%1: already at stage %2 of %3").arg(shortDeviceName(d.profileKey)).arg(now.activeStage + 1).arg(n));
+                });
+                return;
+            }
+            if (!sensor.write(now))
+                return;
+            QMetaObject::invokeMethod(this, [this, d, now, n] {
+                DeviceProfile p = m_config->device(d.profileKey);
+                if (p.sensor.isValid() && p.sensor.stages == now.stages && p.sensor.pollRate == now.pollRate) {
+                    p.sensor.activeStage = now.activeStage;
+                    m_config->setDevice(d.profileKey, p);
+                    m_config->save(nullptr);
+                    markSensorApplied(d.hidPath, p.sensor);
+                }
+                const QString text = tr("%1: %2 DPI (stage %3 of %4)")
+                                         .arg(shortDeviceName(d.profileKey))
+                                         .arg(now.dpi())
+                                         .arg(now.activeStage + 1)
+                                         .arg(n);
+                emit message(text);
+                if (m_config->notifications)
+                    notify(text);
+            });
+        });
+    }
+}
+
 void RemapManager::runCommand(const QString &command)
 {
     // Through the shell, so arguments, quotes, pipes and ~ work as in a
@@ -238,6 +315,9 @@ void RemapManager::addRemapper(const RazerDevice &dev)
         perform(Hotkey::Action(action), profile, device, m_config->notifications);
     });
     connect(r, &Remapper::commandTriggered, this, &RemapManager::runCommand);
+    connect(r, &Remapper::dpiTriggered, this, [this, dev](int action, int clutchDpi, bool pressed) {
+        handleDpi(dev, action, clutchDpi, pressed);
+    });
     connect(r, &Remapper::failed, this, [this, hidPath](const QString &msg) {
         m_errors.insert(hidPath, msg);
         emit message(msg);

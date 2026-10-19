@@ -52,6 +52,9 @@ signals:
     void hotkeyTriggered(int action, const QString &profile, const QString &device);
     // A binding asks to run this shell command. From the worker thread.
     void commandTriggered(const QString &command);
+    // A DPI binding (Binding::DpiAction) was pressed or, for the clutch,
+    // released. From the worker thread.
+    void dpiTriggered(int action, int clutchDpi, bool pressed);
     void failed(const QString &message);
     void disconnected();
 
@@ -147,6 +150,7 @@ private:
         bool paced = false;  // its pauses add up to at least Keys::MacroMinLoopGap
     };
     QHash<int, Macro> m_macros; // source code -> playing macro
+    QSet<int> m_clutchKeys;     // inputs holding the sensitivity clutch
     QSet<int> m_suspended;      // modifiers lifted for a combo while still held
     int m_suspendSource = -1;   // the input whose combo lifted them
 

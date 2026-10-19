@@ -586,6 +586,48 @@ int main(int argc, char **argv)
         kbd.remapper->setProfile(kp);
     }
 
+    // DPI bindings: the clutch reports press and release, a stage step only
+    // the press (also from a wheel notch); neither types anything.
+    {
+        std::mutex m;
+        QList<std::tuple<int, int, bool>> got;
+        QObject::connect(kbd.remapper, &Remapper::dpiTriggered, kbd.remapper,
+                         [&](int a, int v, bool p) { std::lock_guard l(m); got << std::tuple{a, v, p}; },
+                         Qt::DirectConnection);
+        DeviceProfile dp = kp;
+        Binding clutch;
+        clutch.dpi = Binding::DpiClutch;
+        clutch.clutchDpi = 450;
+        dp.bindings.insert(KEY_F11, clutch);
+        Binding up;
+        up.dpi = Binding::DpiStageUp;
+        dp.bindings.insert(KEY_F12, up);
+        kbd.remapper->setProfile(dp);
+        takeOutput();
+        kbd.key(KEY_F11, 1);
+        kbd.key(KEY_F11, 2);
+        kbd.key(KEY_F11, 0);
+        kbd.key(KEY_F12, 1);
+        kbd.key(KEY_F12, 0);
+        CHECK(takeOutput().empty());
+        {
+            std::lock_guard l(m);
+            CHECK((got == QList<std::tuple<int, int, bool>>{{Binding::DpiClutch, 450, true}, {Binding::DpiClutch, 0, false},
+                                                           {Binding::DpiStageUp, 400, true}}));
+        }
+        QObject::disconnect(kbd.remapper, &Remapper::dpiTriggered, kbd.remapper, nullptr);
+
+        Config c;
+        c.load(dir.filePath(QStringLiteral("dpi.json")), nullptr);
+        c.ensureDevice(QStringLiteral("kbd"));
+        c.setDevice(QStringLiteral("kbd"), dp);
+        CHECK(c.save(nullptr));
+        Config loaded;
+        CHECK(loaded.load(c.path(), nullptr));
+        CHECK(loaded.device(QStringLiteral("kbd")).bindings == dp.bindings);
+        kbd.remapper->setProfile(kp);
+    }
+
     // A device that goes away while its Hypershift key is held doesn't leave
     // the other devices stuck in the layer.
     mouse.key(BTN_SIDE, 1);

@@ -33,18 +33,25 @@ struct Binding
     MacroMode macroMode = PlayOnce;
     // A shell command run when the input is pressed, instead of any keys.
     QString command;
+    // Mouse DPI: a sensitivity clutch (clutchDpi while held) or a step
+    // through the DPI stages.
+    enum DpiAction { NoDpi, DpiClutch, DpiStageUp, DpiStageDown, DpiStageCycle };
+    DpiAction dpi = NoDpi;
+    int clutchDpi = 400;
 
     bool isHypershift() const;
     bool isTapHold() const { return !hold.isEmpty(); }
     bool isMacro() const { return !macro.isEmpty(); }
     bool isCommand() const { return !command.isEmpty(); }
+    bool isDpi() const { return dpi != NoDpi; }
     // Whether holding this input switches to the Hypershift layer.
     bool triggersHypershift() const;
     int effectiveHoldTime() const;
     bool operator==(const Binding &o) const
     {
         return targets == o.targets && turbo == o.turbo && hold == o.hold && effectiveHoldTime() == o.effectiveHoldTime()
-               && macro == o.macro && (macro.isEmpty() || macroMode == o.macroMode) && command == o.command;
+               && macro == o.macro && (macro.isEmpty() || macroMode == o.macroMode) && command == o.command
+               && dpi == o.dpi && (dpi != DpiClutch || clutchDpi == o.clutchDpi);
     }
 };
 

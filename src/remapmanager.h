@@ -7,7 +7,11 @@
 #include <QHash>
 #include <QObject>
 #include <QElapsedTimer>
+#include <QThreadPool>
 #include <QTimer>
+
+#include <atomic>
+#include <memory>
 
 class QLocalServer;
 class Remapper;
@@ -43,6 +47,9 @@ public:
 
     // Runs a binding's shell command in the background.
     void runCommand(const QString &command);
+    // A DPI binding pressed (or the clutch released) on `from`: acts on that
+    // mouse, or from a keyboard on every mouse with adjustable DPI.
+    void handleDpi(const RazerDevice &from, int action, int clutchDpi, bool pressed);
 
     // Call after changing the config.
     void applyProfile();
@@ -80,6 +87,10 @@ private:
     QHash<QString, QString> m_errors;       // by hidPath
     QHash<QString, SensorSettings> m_appliedSensor; // by hidPath: last DPI / poll rate written
     QHash<QString, LightingSettings> m_appliedLighting; // by hidPath: last lighting written
+    // DPI changes take ~60 ms each over USB; they run here, one at a time
+    // and in order, so they never hold up input or the window.
+    QThreadPool m_sensorQueue;
+    QHash<QString, std::shared_ptr<std::atomic<int>>> m_clutchRestore; // by hidPath: DPI to go back to
     QFileSystemWatcher m_watcher;
     QTimer m_rescanTimer;
     int m_retries = 0;

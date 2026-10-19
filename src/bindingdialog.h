@@ -84,6 +84,9 @@ private:
     QRadioButton *m_hypershift;
     QRadioButton *m_macro;
     QRadioButton *m_command;
+    QRadioButton *m_dpi;
+    QComboBox *m_dpiAction;
+    QSpinBox *m_clutchDpi;
     QLineEdit *m_commandEdit;
     QPushButton *m_commandBrowse;
     QPushButton *m_macroEdit;

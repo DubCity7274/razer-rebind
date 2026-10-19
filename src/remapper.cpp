@@ -323,6 +323,9 @@ void Remapper::ungrab()
     m_held.clear();
     m_turbo.clear();
     m_macros.clear();
+    if (!m_clutchKeys.isEmpty())
+        emit dpiTriggered(int(Binding::DpiClutch), 0, false);
+    m_clutchKeys.clear();
     m_suspended.clear();
     m_suspendSource = -1;
     m_tapHold.reset();
@@ -559,6 +562,13 @@ void Remapper::processKey(int code, int value)
             b.targets = {code};
         if (combo)
             suspendModifiers(combo, code);
+        if (b.isDpi()) {
+            m_held.insert(code, {});
+            if (b.dpi == Binding::DpiClutch)
+                m_clutchKeys.insert(code);
+            emit dpiTriggered(int(b.dpi), b.clutchDpi, true);
+            return;
+        }
         if (b.isCommand()) {
             // Once per press; key repeat and the release do nothing.
             m_held.insert(code, {});
@@ -589,6 +599,8 @@ void Remapper::processKey(int code, int value)
         // Release exactly what this key pressed, even if its binding has
         // changed while it was held.
         const QList<int> targets = m_held.take(code);
+        if (m_clutchKeys.remove(code))
+            emit dpiTriggered(int(Binding::DpiClutch), 0, false);
         if (auto m = m_macros.constFind(code); m != m_macros.constEnd() && m->mode == Binding::RepeatWhileHeld) {
             stopMacro(code);
         } else if (targets == QList<int>{Keys::Hypershift}) {
@@ -635,6 +647,10 @@ void Remapper::handleWheel(const input_event &ev)
     // The kernel reports each notch twice (REL_WHEEL and the high-resolution
     // REL_WHEEL_HI_RES); act on the classic one and swallow both. A notch
     // can't be held, so Hypershift and turbo don't apply.
+    if (ev.code == REL_WHEEL && b.isDpi() && b.dpi != Binding::DpiClutch) {
+        emit dpiTriggered(int(b.dpi), 0, true);
+        return;
+    }
     if (ev.code == REL_WHEEL && b.isCommand()) {
         emit commandTriggered(b.command);
         return;

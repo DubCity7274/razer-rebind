@@ -13,6 +13,9 @@
   colour them, Fn included. Each segment of the light strips around the
   keyboard and the wrist rest can be painted too. The picture shows every
   key's and segment's colour.
+- **Sensitivity clutch and DPI bindings.** A key or button can lower the
+  mouse's DPI while held (a sensitivity clutch for aiming), or step to the
+  next, previous or following DPI stage, with a notification of the new DPI.
 - **Per-profile lighting.** Lighting is saved with the profile like DPI, so
   switching profiles or starting a linked game changes it too.
 

@@ -112,6 +112,15 @@ QString comboLabel(const QList<int> &codes)
 
 QString bindingLabel(const Binding &binding, bool compact)
 {
+    switch (binding.dpi) {
+    case Binding::NoDpi: break;
+    case Binding::DpiClutch:
+        return compact ? QStringLiteral("DPI %1").arg(binding.clutchDpi)
+                       : QStringLiteral("Sensitivity clutch: %1 DPI while held").arg(binding.clutchDpi);
+    case Binding::DpiStageUp: return compact ? QStringLiteral("DPI +") : QStringLiteral("Next DPI stage");
+    case Binding::DpiStageDown: return compact ? QStringLiteral("DPI −") : QStringLiteral("Previous DPI stage");
+    case Binding::DpiStageCycle: return compact ? QStringLiteral("DPI ⟳") : QStringLiteral("Cycle DPI stages");
+    }
     if (binding.isCommand())
         return compact ? QStringLiteral("Run") : QStringLiteral("Run: %1").arg(binding.command);
     if (binding.isMacro()) {

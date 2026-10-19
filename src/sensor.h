@@ -38,6 +38,11 @@ public:
     bool read(SensorSettings *out, QString *error = nullptr) const;
     bool write(const SensorSettings &settings, QString *error = nullptr) const;
 
+    // The DPI in use right now, and changing just that (the stages stay):
+    // for the sensitivity clutch.
+    int currentDpi(QString *error = nullptr) const;
+    bool setCurrentDpi(int dpi, QString *error = nullptr) const;
+
     static constexpr int MinDpi = 100;
     static constexpr int MaxStages = 5;
 

@@ -257,3 +257,29 @@ bool Sensor::write(const SensorSettings &in, QString *error) const
         return false;
     return true;
 }
+
+int Sensor::currentDpi(QString *error) const
+{
+    if (daemonAvailable()) {
+        const QDBusMessage reply = call(m_daemonPath, DpiInterface, QStringLiteral("getDPI"));
+        if (!ok(reply, error))
+            return -1;
+        const QList<int> dpi = qdbus_cast<QList<int>>(reply.arguments().value(0));
+        return dpi.isEmpty() ? -1 : dpi.first();
+    }
+    const int dpi = m_device.attribute("dpi").section(QLatin1Char(':'), 0, 0).toInt();
+    return dpi > 0 ? dpi : -1;
+}
+
+bool Sensor::setCurrentDpi(int dpi, QString *error) const
+{
+    dpi = std::clamp(dpi, MinDpi, maxDpi());
+    if (daemonAvailable())
+        return ok(call(m_daemonPath, DpiInterface, QStringLiteral("setDPI"),
+                       {QVariant::fromValue(quint16(dpi)), QVariant::fromValue(quint16(dpi))}),
+                  error);
+    QByteArray data;
+    appendBigEndian16(data, dpi);
+    appendBigEndian16(data, dpi);
+    return writeRaw(m_device.hidPath + QStringLiteral("/dpi"), data, error);
+}

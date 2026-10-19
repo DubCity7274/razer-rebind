@@ -3,6 +3,7 @@
 #include "inputdetector.h"
 #include "keys.h"
 #include "macrodialog.h"
+#include "sensor.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -20,6 +21,7 @@
 #include <QMessageBox>
 #include <QRadioButton>
 #include <QSpinBox>
+#include <QStandardItemModel>
 #include <QVBoxLayout>
 
 #include <linux/input-event-codes.h>
@@ -183,6 +185,19 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, b
     m_macroMode->addItem(tr("Play once"), Binding::PlayOnce);
     m_macroMode->addItem(tr("Repeat while held"), Binding::RepeatWhileHeld);
     m_macroMode->addItem(tr("Press to start, press again to stop"), Binding::Toggle);
+    m_dpi = new QRadioButton(tr("Change mouse DPI"));
+    m_dpi->setToolTip(device.kind == RazerDevice::Mouse ? tr("Changes this mouse's DPI")
+                                                        : tr("Changes the DPI of your Razer mouse"));
+    m_dpiAction = new QComboBox;
+    m_dpiAction->addItem(tr("Sensitivity clutch: while held, use"), Binding::DpiClutch);
+    m_dpiAction->addItem(tr("Next DPI stage"), Binding::DpiStageUp);
+    m_dpiAction->addItem(tr("Previous DPI stage"), Binding::DpiStageDown);
+    m_dpiAction->addItem(tr("Cycle through the DPI stages"), Binding::DpiStageCycle);
+    m_clutchDpi = new QSpinBox;
+    m_clutchDpi->setRange(Sensor::MinDpi, 30000);
+    m_clutchDpi->setSingleStep(50);
+    m_clutchDpi->setValue(400);
+    m_clutchDpi->setSuffix(tr(" DPI"));
     m_command = new QRadioButton(tr("Run a command"));
     m_commandEdit = new QLineEdit;
     m_commandEdit->setPlaceholderText(tr("e.g. steam, or ~/bin/toggle-vpn.sh, or playerctl play-pause"));
@@ -232,6 +247,13 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, b
     macroRow->addWidget(m_macroMode);
     macroRow->addWidget(m_macroSummary, 1);
     outLayout->addLayout(macroRow);
+    outLayout->addWidget(m_dpi);
+    auto *dpiRow = new QHBoxLayout;
+    dpiRow->setContentsMargins(24, 0, 0, 0);
+    dpiRow->addWidget(m_dpiAction);
+    dpiRow->addWidget(m_clutchDpi);
+    dpiRow->addStretch();
+    outLayout->addLayout(dpiRow);
     outLayout->addWidget(m_command);
     auto *commandRow = new QHBoxLayout;
     commandRow->setContentsMargins(24, 0, 0, 0);
@@ -299,11 +321,16 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, b
 
     connect(m_source, &KeyPicker::codeChanged, this, &BindingDialog::updateState);
     connect(m_key, &KeyPicker::codeChanged, this, &BindingDialog::updateState);
-    for (QAbstractButton *b : std::initializer_list<QAbstractButton *>{m_remap, m_disable, m_hypershift, m_macro, m_command, m_ctrl, m_shift, m_alt, m_super, m_turbo, m_holdKeys,
+    for (QAbstractButton *b : std::initializer_list<QAbstractButton *>{m_remap, m_disable, m_hypershift, m_macro, m_command, m_dpi, m_ctrl, m_shift, m_alt, m_super, m_turbo, m_holdKeys,
           m_holdHypershift, m_holdCtrl, m_holdShift, m_holdAlt, m_holdSuper})
         connect(b, &QAbstractButton::toggled, this, &BindingDialog::updateState);
     connect(m_holdBox, &QGroupBox::toggled, this, &BindingDialog::updateState);
     connect(m_macroMode, &QComboBox::currentIndexChanged, this, &BindingDialog::updateState);
+    connect(m_dpiAction, &QComboBox::activated, this, [this] {
+        m_dpi->setChecked(true);
+        updateState();
+    });
+    connect(m_clutchDpi, &QSpinBox::valueChanged, this, &BindingDialog::updateState);
     connect(m_commandEdit, &QLineEdit::textEdited, this, [this] {
         m_command->setChecked(true);
         updateState();
@@ -373,6 +400,15 @@ void BindingDialog::setBinding(const Binding &binding)
     m_macroSteps = binding.macro;
     m_macroMode->setCurrentIndex(m_macroMode->findData(binding.macroMode));
     m_commandEdit->setText(binding.command);
+    if (binding.isDpi()) {
+        m_dpiAction->setCurrentIndex(m_dpiAction->findData(binding.dpi));
+        m_clutchDpi->setValue(binding.clutchDpi);
+        m_holdBox->setChecked(false);
+        m_turbo->setChecked(false);
+        m_dpi->setChecked(true);
+        updateState();
+        return;
+    }
     if (binding.isCommand()) {
         m_holdBox->setChecked(false);
         m_turbo->setChecked(false);
@@ -446,6 +482,11 @@ Binding BindingDialog::binding() const
         b.command = m_commandEdit->text().trimmed();
         return b;
     }
+    if (m_dpi->isChecked()) {
+        b.dpi = Binding::DpiAction(m_dpiAction->currentData().toInt());
+        b.clutchDpi = m_clutchDpi->value();
+        return b;
+    }
     if (m_macro->isChecked()) {
         b.macro = m_macroSteps;
         b.macroMode = Binding::MacroMode(m_macroMode->currentData().toInt());
@@ -510,7 +551,15 @@ void BindingDialog::updateState()
         m_remap->setChecked(true);
     // A macro is its own thing: no tap/hold or turbo on top. A wheel notch
     // can't be held, so it can only play once.
-    const bool macro = m_macro->isChecked() || m_command->isChecked(); // neither combines with tap/hold
+    // None of these combines with tap/hold. The clutch needs a held input,
+    // so it can't go on a wheel notch.
+    const bool macro = m_macro->isChecked() || m_command->isChecked() || m_dpi->isChecked();
+    if (auto *model = qobject_cast<QStandardItemModel *>(m_dpiAction->model()))
+        if (QStandardItem *item = model->item(m_dpiAction->findData(Binding::DpiClutch)))
+            item->setEnabled(!Keys::isWheel(Keys::triggerCode(src)));
+    if (Keys::isWheel(Keys::triggerCode(src)) && m_dpiAction->currentData().toInt() == Binding::DpiClutch)
+        m_dpiAction->setCurrentIndex(m_dpiAction->findData(Binding::DpiStageUp));
+    m_clutchDpi->setVisible(m_dpiAction->currentData().toInt() == Binding::DpiClutch);
     if (macro && m_holdBox->isChecked())
         m_holdBox->setChecked(false);
     if (wheel && m_macroMode->currentIndex() != 0)
@@ -535,7 +584,9 @@ void BindingDialog::updateState()
     const QList<int> out = targets();
     QString left = src > 0 ? Keys::triggerLabel(src).toHtmlEscaped() : tr("<i>choose an input</i>");
     QString right;
-    if (m_command->isChecked())
+    if (m_dpi->isChecked())
+        right = Keys::bindingLabel(binding()).toHtmlEscaped();
+    else if (m_command->isChecked())
         right = m_commandEdit->text().trimmed().isEmpty()
                     ? tr("<i>enter a command</i>")
                     : tr("run <code>%1</code>").arg(m_commandEdit->text().trimmed().toHtmlEscaped());

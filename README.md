@@ -278,6 +278,15 @@ When a mouse is selected, the bar above its bindings sets its DPI stages and
 polling rate. The DPI button under the mouse cycles through the stages; the
 round button in front of a stage picks it now. Changes apply right away.
 
+Any key or button can also change the DPI: choose **Change mouse DPI** in a
+binding, then either **Sensitivity clutch** (while held, the mouse uses the
+DPI you set, for precise aiming, and goes back when you let go) or **Next**,
+**Previous** or **Cycle through the DPI stages**. On a mouse button it
+changes that mouse; on a keyboard key, your Razer mouse. A stage change shows
+the new DPI as a notification, and is kept in the profile like the DPI
+button's. Each change takes the mouse's driver about 60 ms over the wireless
+link, so the clutch kicks in just after you press it.
+
 Each profile keeps its own DPI and polling rate, so switching profiles, by
 hand, by hotkey or when a game starts, changes them too. The first time you
 change them, your other profiles keep the mouse's current settings. With

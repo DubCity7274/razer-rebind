@@ -80,7 +80,18 @@ BindingMap bindingsFromJson(const QJsonObject &bindings)
                                 : mode == QLatin1String("toggle")   ? Binding::Toggle
                                                                     : Binding::PlayOnce;
             binding.command = o.value(QStringLiteral("command")).toString().trimmed();
-            if (binding.isMacro() || binding.isCommand()) {
+            const QString dpi = o.value(QStringLiteral("dpi")).toString();
+            binding.dpi = dpi == QLatin1String("clutch") ? Binding::DpiClutch
+                          : dpi == QLatin1String("up")     ? Binding::DpiStageUp
+                          : dpi == QLatin1String("down")   ? Binding::DpiStageDown
+                          : dpi == QLatin1String("cycle")  ? Binding::DpiStageCycle
+                                                           : Binding::NoDpi;
+            binding.clutchDpi = std::clamp(o.value(QStringLiteral("clutchDpi")).toInt(400), Sensor::MinDpi, 30000);
+            if (binding.isDpi()) {
+                binding.command.clear();
+                binding.macro.clear();
+            }
+            if (binding.isMacro() || binding.isCommand() || binding.isDpi()) {
                 binding.turbo = 0;
                 binding.hold.clear();
             }
@@ -112,8 +123,14 @@ QJsonObject bindingsToJson(const BindingMap &bindings)
         QJsonArray targets;
         for (int t : b.targets)
             targets.append(Keys::name(t));
-        if (b.turbo > 0 || b.isTapHold() || b.isMacro() || b.isCommand()) {
+        if (b.turbo > 0 || b.isTapHold() || b.isMacro() || b.isCommand() || b.isDpi()) {
             QJsonObject o{{QStringLiteral("keys"), targets}};
+            if (b.isDpi()) {
+                const char *ids[] = {"", "clutch", "up", "down", "cycle"};
+                o.insert(QStringLiteral("dpi"), QLatin1String(ids[b.dpi]));
+                if (b.dpi == Binding::DpiClutch)
+                    o.insert(QStringLiteral("clutchDpi"), b.clutchDpi);
+            }
             if (b.isCommand())
                 o.insert(QStringLiteral("command"), b.command);
             if (b.isMacro()) {

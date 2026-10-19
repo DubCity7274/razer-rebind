@@ -143,13 +143,17 @@ void SensorPanel::onPolled(const QString &hidPath, const SensorSettings &now)
         return;
     m_current = now;
     DeviceProfile p = m_config->device(m_device.profileKey);
-    if (p.sensor.isValid() && p.sensor.stages == now.stages && p.sensor.activeStage != now.activeStage) {
-        // The DPI button picked another stage: show it and keep it.
-        p.sensor.activeStage = now.activeStage;
-        m_config->setDevice(m_device.profileKey, p);
-        m_config->save(nullptr);
-        m_manager->markSensorApplied(m_device.hidPath, p.sensor);
-        display(p.sensor);
+    if (p.sensor.isValid() && p.sensor.stages == now.stages) {
+        // The DPI button picked another stage: keep it in the profile. A
+        // DPI binding has already done that, so compare with what's shown.
+        if (p.sensor.activeStage != now.activeStage) {
+            p.sensor.activeStage = now.activeStage;
+            m_config->setDevice(m_device.profileKey, p);
+            m_config->save(nullptr);
+            m_manager->markSensorApplied(m_device.hidPath, p.sensor);
+        }
+        if (fromWidgets().activeStage != now.activeStage)
+            display(p.sensor);
     } else if (!p.sensor.isValid()) {
         display(now);
     }
