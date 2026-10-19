@@ -7,6 +7,7 @@
 
 #include <linux/input-event-codes.h>
 
+#include <algorithm>
 #include <tuple>
 
 namespace {
@@ -39,7 +40,26 @@ void DeviceView::setBindings(const BindingMap &bindings, const BindingMap &fallb
 {
     m_bindings = bindings;
     m_fallback = fallback;
+    relayout();
+}
+
+void DeviceView::relayout()
+{
+    m_regions.clear();
+    m_hover = -1;
+    updateGeometry();
     update();
+}
+
+QList<int> DeviceView::boundCodes() const
+{
+    QList<int> out;
+    for (const BindingMap *map : {&m_bindings, &m_fallback})
+        for (auto it = map->cbegin(); it != map->cend(); ++it)
+            if (Keys::triggerModifiers(it.key()) == 0 && !out.contains(it.key()))
+                out << it.key();
+    std::sort(out.begin(), out.end());
+    return out;
 }
 
 const Binding *DeviceView::bindingFor(int code, bool *inherited) const
@@ -401,5 +421,87 @@ void MouseView::paintOverlay(QPainter &p) const
     p.drawText(t.mapRect(QRectF(0, 9.4, 4.6, 3.2)), Qt::AlignRight | Qt::AlignBottom | Qt::TextWordWrap,
                tr("The DPI button underneath is handled by the mouse firmware and can't be rebound. It "
                   "cycles through the DPI stages set below."));
+    p.restore();
+}
+
+// --- generic view -------------------------------------------------------------
+
+namespace {
+constexpr int GenericColumns = 8;
+constexpr qreal GenericKeyW = 2.0, GenericKeyH = 1.3, GenericTop = 1.4;
+} // namespace
+
+DevicePicture pictureFor(const RazerDevice &device)
+{
+    if (device.kind == RazerDevice::Keyboard && device.productId == 0x0226)
+        return DevicePicture::HuntsmanElite;
+    // Viper, Viper Ultimate (wired and wireless) and Viper 8KHz share the shape.
+    if (device.kind == RazerDevice::Mouse
+        && (device.productId == 0x0078 || device.productId == 0x007a || device.productId == 0x007b
+            || device.productId == 0x0091))
+        return DevicePicture::Viper;
+    return DevicePicture::Generic;
+}
+
+void GenericView::setDevice(const RazerDevice &device)
+{
+    m_device = device;
+    relayout();
+}
+
+void GenericView::noteInput(int code)
+{
+    QList<int> &seen = m_seen[m_device.hidPath];
+    if (code > 0 && !seen.contains(code)) {
+        seen << code;
+        relayout();
+    }
+}
+
+QList<int> GenericView::codes() const
+{
+    // Bound inputs first, in code order, then the rest as they were pressed.
+    QList<int> out = boundCodes();
+    for (int c : m_seen.value(m_device.hidPath))
+        if (!out.contains(c))
+            out << c;
+    return out;
+}
+
+QSizeF GenericView::designSize() const
+{
+    const int rows = std::max(1, int((codes().size() + GenericColumns - 1) / GenericColumns));
+    return {GenericColumns * GenericKeyW, GenericTop + rows * GenericKeyH + 0.2};
+}
+
+QVector<DeviceView::Region> GenericView::regions() const
+{
+    QVector<Region> out;
+    const QList<int> list = codes();
+    for (int i = 0; i < list.size(); ++i) {
+        const qreal x = (i % GenericColumns) * GenericKeyW;
+        const qreal y = GenericTop + (i / GenericColumns) * GenericKeyH;
+        out.push_back({list[i], Keys::label(list[i]), roundedKey(x, y, GenericKeyW, GenericKeyH)});
+    }
+    return out;
+}
+
+void GenericView::paintOverlay(QPainter &p) const
+{
+    const QTransform t = p.transform();
+    p.save();
+    p.resetTransform();
+    QFont f = font();
+    f.setPixelSize(std::max(11, int(t.m11() * 0.3)));
+    p.setFont(f);
+    p.setPen(palette().color(QPalette::PlaceholderText));
+    const QString what = m_device.kind == RazerDevice::Mouse ? tr("button") : tr("key");
+    const QString text = codes().isEmpty()
+                             ? tr("There's no picture of the %1 yet. Press a %2 on it and it shows up here; "
+                                  "click it to rebind it.").arg(m_device.profileKey, what)
+                             : tr("There's no picture of the %1 yet: press a %2 on it to add it here, then "
+                                  "click it to rebind it.").arg(m_device.profileKey, what);
+    p.drawText(t.mapRect(QRectF(0, 0, GenericColumns * GenericKeyW, GenericTop - 0.2)),
+               Qt::AlignLeft | Qt::AlignVCenter | Qt::TextWordWrap, text);
     p.restore();
 }

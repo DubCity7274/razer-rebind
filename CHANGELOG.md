@@ -23,6 +23,10 @@
 
 ### Changes
 
+- Other Razer keyboards and mice no longer show the Huntsman Elite or
+  Viper picture, which didn't match them. They get a grid of keycaps
+  instead: their bound inputs plus every key or button pressed on them,
+  each clickable to rebind it, lighting up while held.
 - Counts such as "1 binding applied" read properly instead of
   "binding(s)".
 

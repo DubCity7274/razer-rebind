@@ -147,7 +147,7 @@ are polled once a minute on a background thread.
 | `src/notifications.*` | Desktop notifications over `org.freedesktop.Notifications` |
 | `src/settingsdialog.*` | Notification and battery settings |
 | `src/keys.*` | Key names and labels, and which codes are safe to emit |
-| `src/deviceview.*` | Clickable Huntsman Elite and Viper Ultimate pictures |
+| `src/deviceview.*` | Clickable Huntsman Elite and Viper pictures, and the generic keycap grid for other devices |
 | `src/macrodialog.*` | Macro recorder and step editor |
 | `src/bindingdialog.*` | Binding editor (search, detect, record shortcut) |
 | `src/hotkeydialog.*` | Hotkey list and editor |

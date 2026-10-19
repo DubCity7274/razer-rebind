@@ -218,6 +218,7 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
 
     m_keyboardView = new KeyboardView;
     m_mouseView = new MouseView;
+    m_genericView = new GenericView;
     m_views = new QStackedWidget;
     auto *placeholder = new QLabel(tr("No Razer keyboard or mouse found.\n\n"
                                       "Make sure the OpenRazer kernel modules are loaded\n"
@@ -226,6 +227,7 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
     m_views->addWidget(placeholder);
     m_views->addWidget(m_keyboardView);
     m_views->addWidget(m_mouseView);
+    m_views->addWidget(m_genericView);
 
     m_table = new QTableWidget(0, 2);
     m_table->setHorizontalHeaderLabels({tr("Input"), tr("Output")});
@@ -340,7 +342,7 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
         m_config->setDevice(dev->profileKey, p);
         saveProfile();
     });
-    for (DeviceView *v : {m_keyboardView, m_mouseView})
+    for (DeviceView *v : {m_keyboardView, m_mouseView, static_cast<DeviceView *>(m_genericView)})
         connect(v, &DeviceView::keyClicked, this, &MainWindow::editBinding);
     connect(addButton, &QPushButton::clicked, this, [this] { editBinding(-1); });
     connect(m_editButton, &QPushButton::clicked, this, [this] {
@@ -381,6 +383,8 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
         if (code == Keys::WheelUp || code == Keys::WheelDown) {
             // Wheel "presses" are instantaneous; flash them briefly.
             if (pressed) {
+                if (currentView() == m_genericView)
+                    m_genericView->noteInput(code);
                 currentView()->setPressed(code, true);
                 QTimer::singleShot(120, this, [this, code] {
                     if (DeviceView *v = currentView())
@@ -389,6 +393,8 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
             }
             return;
         }
+        if (pressed && currentView() == m_genericView)
+            m_genericView->noteInput(code);
         currentView()->setPressed(code, pressed);
     });
 
@@ -464,7 +470,12 @@ DeviceView *MainWindow::currentView() const
     const RazerDevice *dev = current();
     if (!dev)
         return m_keyboardView;
-    return dev->kind == RazerDevice::Mouse ? m_mouseView : m_keyboardView;
+    switch (pictureFor(*dev)) {
+    case DevicePicture::HuntsmanElite: return m_keyboardView;
+    case DevicePicture::Viper: return m_mouseView;
+    case DevicePicture::Generic: return m_genericView;
+    }
+    return m_keyboardView;
 }
 
 void MainWindow::rebuildDeviceList()
@@ -501,8 +512,8 @@ void MainWindow::selectDevice()
     m_currentPath = item ? item->data(Qt::UserRole).toString() : QString();
     const RazerDevice *dev = current();
 
-    m_keyboardView->clearPressed();
-    m_mouseView->clearPressed();
+    for (DeviceView *v : {m_keyboardView, m_mouseView, static_cast<DeviceView *>(m_genericView)})
+        v->clearPressed();
 
     if (!dev) {
         m_sensor->setDevice(nullptr);
@@ -533,7 +544,8 @@ void MainWindow::selectDevice()
         m_detailsCache.insert(dev->hidPath, parts.join(QStringLiteral("  ·  ")));
     }
     refreshDetails();
-    m_views->setCurrentIndex(dev->kind == RazerDevice::Mouse ? 2 : 1);
+    m_genericView->setDevice(*dev);
+    m_views->setCurrentWidget(currentView());
     {
         QSignalBlocker b(m_deviceEnabled);
         m_deviceEnabled->setEnabled(true);
@@ -630,7 +642,7 @@ void MainWindow::setHypershiftLayer(bool on)
     m_hypershiftLayer = on;
     // Bound keys take the selected layer's colour, so the picture shows
     // which layer is being edited.
-    for (DeviceView *v : {m_keyboardView, m_mouseView})
+    for (DeviceView *v : {m_keyboardView, m_mouseView, static_cast<DeviceView *>(m_genericView)})
         v->setAccent(on ? QColor(0x96, 0x5a, 0xdc) : QColor());
     refreshBindings();
 }
@@ -660,10 +672,10 @@ void MainWindow::refreshBindings()
     const BindingMap &bindings = m_hypershiftLayer ? p.hypershift : p.bindings;
     const BindingMap fallback = m_hypershiftLayer ? p.bindings : BindingMap();
 
-    m_keyboardView->setBindings(dev && dev->kind == RazerDevice::Keyboard ? bindings : BindingMap(),
-                                dev && dev->kind == RazerDevice::Keyboard ? fallback : BindingMap());
-    m_mouseView->setBindings(dev && dev->kind == RazerDevice::Mouse ? bindings : BindingMap(),
-                             dev && dev->kind == RazerDevice::Mouse ? fallback : BindingMap());
+    for (DeviceView *v : {m_keyboardView, m_mouseView, static_cast<DeviceView *>(m_genericView)}) {
+        const bool shown = dev && v == currentView();
+        v->setBindings(shown ? bindings : BindingMap(), shown ? fallback : BindingMap());
+    }
 
     const QString keys = hypershiftKeysText();
     if (!m_hypershiftLayer)

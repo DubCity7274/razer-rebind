@@ -1,6 +1,7 @@
 #pragma once
 
 #include "keys.h"
+#include "razerdevice.h"
 
 #include <QPainterPath>
 #include <QSet>
@@ -45,6 +46,10 @@ protected:
     // The binding shown for a key: its own, else the fallback one (then
     // *inherited is set), else null.
     const Binding *bindingFor(int code, bool *inherited = nullptr) const;
+    // Plain input codes with a binding here or in the fallback layer.
+    QList<int> boundCodes() const;
+    // Lay the regions out again (the generic view's change with its inputs).
+    void relayout();
     QColor accent() const { return m_accent.isValid() ? m_accent : palette().color(QPalette::Highlight); }
 
     void paintEvent(QPaintEvent *) override;
@@ -91,3 +96,32 @@ protected:
     void paintDecoration(QPainter &) const override;
     void paintOverlay(QPainter &) const override;
 };
+
+// For keyboards and mice without a picture of their own: a grid of keycaps
+// for the inputs it knows about, the bound ones and everything pressed on
+// the device since it was selected. Bindings work for every input either
+// way; this only decides what can be clicked.
+class GenericView : public DeviceView
+{
+    Q_OBJECT
+public:
+    using DeviceView::DeviceView;
+
+    void setDevice(const RazerDevice &device);
+    void noteInput(int code); // pressed on the device: give it a keycap
+
+protected:
+    QVector<Region> regions() const override;
+    QSizeF designSize() const override;
+    void paintOverlay(QPainter &) const override;
+
+private:
+    QList<int> codes() const;
+
+    RazerDevice m_device;
+    QHash<QString, QList<int>> m_seen; // by hidPath, in the order first pressed
+};
+
+// Which picture fits a device: only the models it was drawn from.
+enum class DevicePicture { HuntsmanElite, Viper, Generic };
+DevicePicture pictureFor(const RazerDevice &device);

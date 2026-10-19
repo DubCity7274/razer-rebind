@@ -51,10 +51,18 @@ drivers, runs on X11 and Wayland, and needs no root once installed.
 ## Supported devices
 
 Razer Rebind was developed with the **Razer Huntsman Elite** keyboard and the
-**Razer Viper Ultimate** mouse (wired and wireless), which get a full
-clickable picture of the device. Any other keyboard or mouse driven by
-OpenRazer shows up too, and all its keys and buttons can be bound through
-the bindings list and **Detect**.
+**Razer Viper Ultimate** mouse. These get a clickable picture of the device:
+
+- Razer Huntsman Elite
+- Razer Viper, Viper Ultimate (wired and wireless) and Viper 8KHz, which
+  share the same shape and buttons
+
+Any other keyboard or mouse driven by OpenRazer works too, with every
+feature, but instead of a picture it gets a grid of keycaps: the inputs that
+have bindings, plus every key or button you press on it while it's
+selected. Click one to rebind it, or use **Add binding…** and **Detect**.
+DPI and polling rate settings appear for any mouse whose driver supports
+them.
 
 ## Requirements
 

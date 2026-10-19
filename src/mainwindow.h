@@ -17,6 +17,7 @@ class QStackedWidget;
 class QSystemTrayIcon;
 class QTableWidget;
 class DeviceView;
+class GenericView;
 class SensorPanel;
 class AutoSwitcher;
 class BatteryMonitor;
@@ -84,6 +85,7 @@ private:
     QStackedWidget *m_views;
     DeviceView *m_keyboardView;
     DeviceView *m_mouseView;
+    GenericView *m_genericView;
     QTableWidget *m_table;
     SensorPanel *m_sensor;
     QPushButton *m_editButton;
