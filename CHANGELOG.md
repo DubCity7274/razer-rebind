@@ -8,6 +8,11 @@
   breathing, spectrum, wave, reactive, starlight, ripple) with its colours,
   speed, direction and brightness. Each device lists the effects it
   supports: a keyboard's keys, a mouse's logo.
+- **Per-key lighting** for the Huntsman Elite. Choose Custom, turn on
+  **Paint keys** and click or drag across keys on the keyboard picture to
+  colour them, Fn included. Each segment of the light strips around the
+  keyboard and the wrist rest can be painted too. The picture shows every
+  key's and segment's colour.
 - **Per-profile lighting.** Lighting is saved with the profile like DPI, so
   switching profiles or starting a linked game changes it too.
 

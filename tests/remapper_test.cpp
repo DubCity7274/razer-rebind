@@ -689,6 +689,25 @@ int main(int argc, char **argv)
         loaded.setActiveProfile(k, QStringLiteral("Game 2"));
         CHECK(loaded.device(k).lighting == p.lighting);
         CHECK(LightingSettings::effectFromId(QStringLiteral("starlight")) == LightingSettings::Starlight);
+
+        // Per-key colours.
+        DeviceProfile cp = loaded.device(k);
+        cp.lighting = LightingSettings();
+        cp.lighting.effect = LightingSettings::Custom;
+        cp.lighting.keys.insert(KEY_W, QColor(255, 0, 0));
+        cp.lighting.keys.insert(KEY_PLAYPAUSE, QColor(0, 255, 0));
+        cp.lighting.keys.insert(KEY_FN, QColor(0, 0, 255));
+        cp.lighting.keys.insert(Keys::edgeLed(8, 19), QColor(255, 128, 0));
+        cp.lighting.unlit = QColor(10, 10, 60);
+        cp.lighting.edge = QColor(160, 60, 255);
+        loaded.setDevice(k, cp);
+        CHECK(loaded.save(nullptr));
+        Config again;
+        CHECK(again.load(loaded.path(), nullptr));
+        CHECK(again.device(k).lighting == cp.lighting);
+        CHECK(LightingSettings::effectFromId(QStringLiteral("custom")) == LightingSettings::Custom);
+        CHECK(Keys::fromName(Keys::name(Keys::edgeLed(6, 14))) == Keys::edgeLed(6, 14));
+        CHECK(Keys::fromName(QStringLiteral("EDGE_99_1")) == -1);
         CHECK(LightingSettings::effectFromId(QStringLiteral("nonsense")) == LightingSettings::None);
     }
 

@@ -1,6 +1,7 @@
 #include "lightingpanel.h"
 
 #include "config.h"
+#include "ledmap.h"
 #include "remapmanager.h"
 
 #include <QColorDialog>
@@ -35,6 +36,21 @@ LightingPanel::LightingPanel(Config *config, RemapManager *manager, QWidget *par
     m_direction = new QComboBox;
     m_direction->addItem(tr("To the right"), 1);
     m_direction->addItem(tr("To the left"), 2);
+    // Custom (per key)
+    m_paint = new QPushButton(tr("Paint keys"));
+    m_paint->setCheckable(true);
+    m_paint->setToolTip(tr("Click keys on the picture to paint them with the brush colour; right-click to unlight "
+                           "them. Turn off to edit bindings again."));
+    // On is filled solid, like the layer switch, so it's clear clicks paint.
+    m_paint->setStyleSheet(QStringLiteral(
+        "QPushButton:checked { color: white; font-weight: bold; background: palette(highlight);"
+        " border: 1px solid palette(highlight); border-radius: 4px; padding: 4px 10px; }"));
+    m_brushButton = new QPushButton(tr("Brush"));
+    m_unlitButton = new QPushButton(tr("Unlit keys"));
+    m_edgeButton = new QPushButton(tr("Edges"));
+    m_clearKeys = new QPushButton(tr("Clear keys"));
+    for (QPushButton *b : {m_paint, m_brushButton, m_unlitButton, m_edgeButton, m_clearKeys})
+        b->setAutoDefault(false);
     m_brightnessLabel = new QLabel(tr("Brightness:"));
     m_brightness = new QSlider(Qt::Horizontal);
     m_brightness->setRange(0, 100);
@@ -48,7 +64,8 @@ LightingPanel::LightingPanel(Config *config, RemapManager *manager, QWidget *par
     row->setContentsMargins(0, 0, 0, 4);
     row->addWidget(new QLabel(tr("Lighting:")));
     for (QWidget *w : std::initializer_list<QWidget *>{m_effect, m_colours, m_colour1Button, m_colour2Button, m_speed,
-                                                        m_direction})
+                                                        m_direction, m_paint, m_brushButton, m_unlitButton, m_edgeButton,
+                                                        m_clearKeys})
         row->addWidget(w);
     row->addSpacing(16);
     row->addWidget(m_brightnessLabel);
@@ -73,6 +90,21 @@ LightingPanel::LightingPanel(Config *config, RemapManager *manager, QWidget *par
         setColour(button, c);
         commit();
     };
+    connect(m_unlitButton, &QPushButton::clicked, this, [this, pick] { pick(m_unlitButton, &m_unlit); });
+    connect(m_edgeButton, &QPushButton::clicked, this, [this, pick] { pick(m_edgeButton, &m_edge); });
+    connect(m_brushButton, &QPushButton::clicked, this, [this] {
+        const QColor c = QColorDialog::getColor(m_brush, this, tr("Brush colour"));
+        if (c.isValid()) {
+            m_brush = c;
+            setColour(m_brushButton, c);
+            m_paint->setChecked(true);
+        }
+    });
+    connect(m_paint, &QPushButton::toggled, this, &LightingPanel::paintingChanged);
+    connect(m_clearKeys, &QPushButton::clicked, this, [this] {
+        m_keys.clear();
+        commit();
+    });
     connect(m_colour1Button, &QPushButton::clicked, this, [this, pick] { pick(m_colour1Button, &m_colour1); });
     connect(m_colour2Button, &QPushButton::clicked, this, [this, pick] { pick(m_colour2Button, &m_colour2); });
     hide();
@@ -97,7 +129,9 @@ void LightingPanel::setDevice(const RazerDevice *device)
     const Lighting lighting = device ? Lighting(*device) : Lighting(RazerDevice());
     const QList<LightingSettings::Effect> effects = device ? lighting.effects() : QList<LightingSettings::Effect>();
     if (effects.isEmpty()) {
+        m_paint->setChecked(false);
         hide();
+        emit previewChanged({});
         return;
     }
     m_device = *device;
@@ -128,9 +162,19 @@ void LightingPanel::display(const LightingSettings &s)
     }
     m_colour1 = s.colour1;
     m_colour2 = s.colour2;
+    m_keys = s.keys;
+    m_unlit = s.unlit;
+    m_edge = s.edge;
     setColour(m_colour1Button, m_colour1);
     setColour(m_colour2Button, m_colour2);
+    setColour(m_brushButton, m_brush);
+    setColour(m_unlitButton, m_unlit);
+    setColour(m_edgeButton, m_edge);
+    m_brushButton->setToolTip(tr("Brush: the colour keys are painted with"));
+    m_unlitButton->setToolTip(tr("Keys you haven't painted"));
+    m_edgeButton->setToolTip(tr("The light strips around the keyboard and the wrist rest"));
     updateVisibility();
+    emitPreview();
 }
 
 void LightingPanel::updateVisibility()
@@ -153,6 +197,11 @@ void LightingPanel::updateVisibility()
     m_speed->setVisible(e == L::Reactive || e == L::Starlight);
     m_speed->setToolTip(e == L::Reactive ? tr("How long a pressed key stays lit") : tr("How fast the stars twinkle"));
     m_direction->setVisible(e == L::Wave);
+    const bool custom = e == L::Custom;
+    for (QWidget *w : std::initializer_list<QWidget *>{m_paint, m_brushButton, m_unlitButton, m_edgeButton, m_clearKeys})
+        w->setVisible(custom);
+    if (!custom && m_paint->isChecked())
+        m_paint->setChecked(false);
     const bool lit = e != L::Off;
     m_brightness->setEnabled(lit);
 }
@@ -167,6 +216,9 @@ LightingSettings LightingPanel::fromWidgets() const
     s.speed = m_speed->currentData().toInt();
     s.direction = m_direction->currentData().toInt();
     s.brightness = m_brightness->value();
+    s.keys = m_keys;
+    s.unlit = m_unlit;
+    s.edge = m_edge;
     return s;
 }
 
@@ -184,4 +236,56 @@ void LightingPanel::commit()
     m_config->save(nullptr);
     m_manager->applyProfile();
     m_note->setText(tr("Saved with the “%1” profile").arg(m_config->activeProfile(key)));
+    emitPreview();
+}
+
+bool LightingPanel::isPainting() const
+{
+    return isVisible() && m_paint->isVisible() && m_paint->isChecked();
+}
+
+void LightingPanel::paintKey(int code, bool erase)
+{
+    const LedMap map = ledMap(m_device);
+    if (map.edges.contains(code)) {
+        if (erase)
+            m_keys.remove(code);
+        else
+            m_keys.insert(code, m_brush);
+    } else {
+        const auto led = map.keys.constFind(code);
+        if (led == map.keys.constEnd())
+            return;
+        // Keys sharing an LED (the dial's ring) change together.
+        for (auto it = map.keys.cbegin(); it != map.keys.cend(); ++it)
+            if (it.value() == *led) {
+                if (erase)
+                    m_keys.remove(it.key());
+                else
+                    m_keys.insert(it.key(), m_brush);
+            }
+    }
+    // Show it at once; send it to the keyboard once a drag pauses.
+    emitPreview();
+    m_commitTimer.start();
+}
+
+void LightingPanel::emitPreview()
+{
+    // Only fixed colours can be shown; animated effects show nothing.
+    const LedMap map = isVisible() || !m_device.hidPath.isEmpty() ? ledMap(m_device) : LedMap();
+    const auto e = LightingSettings::Effect(m_effect->currentData().toInt());
+    QHash<int, QColor> keys;
+    if (e == LightingSettings::Custom) {
+        for (auto it = map.keys.cbegin(); it != map.keys.cend(); ++it)
+            keys.insert(it.key(), m_keys.value(it.key(), m_unlit));
+        for (auto it = map.edges.cbegin(); it != map.edges.cend(); ++it)
+            keys.insert(it.key(), m_keys.value(it.key(), m_edge));
+    } else if (e == LightingSettings::Static) {
+        for (auto it = map.keys.cbegin(); it != map.keys.cend(); ++it)
+            keys.insert(it.key(), m_colour1);
+        for (auto it = map.edges.cbegin(); it != map.edges.cend(); ++it)
+            keys.insert(it.key(), m_colour1);
+    }
+    emit previewChanged(keys);
 }

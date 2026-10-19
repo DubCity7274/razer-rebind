@@ -6,6 +6,8 @@
 #include <QFile>
 #include <QFileInfo>
 
+#include "ledmap.h"
+
 #include <algorithm>
 
 namespace {
@@ -21,6 +23,7 @@ const struct { LightingSettings::Effect effect; const char *id; const char *name
     {LightingSettings::Reactive, "reactive", "Reactive"},
     {LightingSettings::Starlight, "starlight", "Starlight"},
     {LightingSettings::Ripple, "ripple", "Ripple"},
+    {LightingSettings::Custom, "custom", "Custom (per key)"},
 };
 
 QDBusMessage call(const QString &path, const QString &interface, const QString &method, const QVariantList &args = {})
@@ -54,7 +57,8 @@ QByteArray rgbBytes(const QColor &c)
 bool LightingSettings::operator==(const LightingSettings &o) const
 {
     return effect == o.effect && colours == o.colours && colour1 == o.colour1 && colour2 == o.colour2
-           && speed == o.speed && direction == o.direction && brightness == o.brightness;
+           && speed == o.speed && direction == o.direction && brightness == o.brightness && keys == o.keys
+           && unlit == o.unlit && edge == o.edge;
 }
 
 QString LightingSettings::effectName(Effect e)
@@ -125,6 +129,8 @@ QList<LightingSettings::Effect> Lighting::effects() const
     // per-key matrix.
     if (!m_logo && hasAttr("matrix_custom_frame") && daemonAvailable())
         out << L::Ripple;
+    if (!m_logo && hasAttr("matrix_custom_frame") && !ledMap(m_device).isEmpty())
+        out << L::Custom;
     return out;
 }
 
@@ -173,6 +179,7 @@ bool Lighting::read(LightingSettings *out, QString *error) const
                : name == QLatin1String("reactive")       ? L::Reactive
                : name.startsWith(QLatin1String("starlight")) ? L::Starlight
                : name.startsWith(QLatin1String("ripple"))    ? L::Ripple
+               : name == QLatin1String("custom")             ? L::Custom
                                                               : L::Spectrum;
     s.colours = name.endsWith(QLatin1String("Dual"))     ? L::TwoColours
                 : name.endsWith(QLatin1String("Random")) ? L::RandomColours
@@ -184,6 +191,36 @@ bool Lighting::read(LightingSettings *out, QString *error) const
     *out = s;
     return true;
 }
+
+namespace {
+
+// Each row of a custom frame: the colours of its columns.
+QList<QByteArray> customFrame(const LedMap &map, const LightingSettings &s)
+{
+    QList<QByteArray> rows(map.rows);
+    for (int r = 0; r < map.rows; ++r) {
+        const QColor fill = map.edgeRows.contains(r) ? s.edge : s.unlit;
+        for (int c = 0; c < map.columns; ++c)
+            rows[r] += rgbBytes(fill);
+    }
+    for (auto it = map.edges.cbegin(); it != map.edges.cend(); ++it) {
+        const QColor c = s.keys.value(it.key(), s.edge);
+        QByteArray &row = rows[it->y()];
+        row[it->x() * 3] = char(c.red());
+        row[it->x() * 3 + 1] = char(c.green());
+        row[it->x() * 3 + 2] = char(c.blue());
+    }
+    for (auto it = map.keys.cbegin(); it != map.keys.cend(); ++it) {
+        const QColor c = s.keys.value(it.key(), s.unlit);
+        QByteArray &row = rows[it->y()];
+        row[it->x() * 3] = char(c.red());
+        row[it->x() * 3 + 1] = char(c.green());
+        row[it->x() * 3 + 2] = char(c.blue());
+    }
+    return rows;
+}
+
+} // namespace
 
 bool Lighting::write(const LightingSettings &s, QString *error) const
 {
@@ -224,6 +261,20 @@ bool Lighting::write(const LightingSettings &s, QString *error) const
                 reply = call(m_daemonPath, iface, set + QStringLiteral("StarlightSingle"),
                              rgb(s.colour1) << QVariant::fromValue(uchar(speed)));
             break;
+        case L::Custom: {
+            // One row at a time (row, first column, last column, colours),
+            // then show the frame.
+            const LedMap map = ledMap(m_device);
+            const QList<QByteArray> rows = customFrame(map, s);
+            for (int r = 0; r < rows.size(); ++r) {
+                const QByteArray row = QByteArray{} + char(r) + char(0) + char(map.columns - 1) + rows[r];
+                reply = call(m_daemonPath, iface, QStringLiteral("setKeyRow"), {row});
+                if (!ok(reply, error))
+                    return false;
+            }
+            reply = call(m_daemonPath, iface, QStringLiteral("setCustom"));
+            break;
+        }
         case L::Ripple:
             // Frames per second of the daemon's animation.
             reply = s.colours == L::RandomColours
@@ -276,6 +327,15 @@ bool Lighting::write(const LightingSettings &s, QString *error) const
         if (error)
             *error = QStringLiteral("Ripple needs openrazer-daemon");
         return false;
+    case L::Custom: {
+        const LedMap map = ledMap(m_device);
+        const QList<QByteArray> rows = customFrame(map, s);
+        done = true;
+        for (int r = 0; r < rows.size() && done; ++r)
+            done = writeAttr("matrix_custom_frame", QByteArray{} + char(r) + char(0) + char(map.columns - 1) + rows[r]);
+        done = done && writeAttr("matrix_effect_custom", "1");
+        break;
+    }
     }
     if (!done)
         return false;

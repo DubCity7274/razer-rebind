@@ -345,8 +345,27 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
         m_config->setDevice(dev->profileKey, p);
         saveProfile();
     });
-    for (DeviceView *v : {m_keyboardView, m_mouseView, static_cast<DeviceView *>(m_genericView)})
-        connect(v, &DeviceView::keyClicked, this, &MainWindow::editBinding);
+    for (DeviceView *v : {m_keyboardView, m_mouseView, static_cast<DeviceView *>(m_genericView)}) {
+        // While painting per-key lighting, clicks paint instead of opening
+        // the binding.
+        connect(v, &DeviceView::keyClicked, this, [this](int code) {
+            if (m_lighting->isPainting())
+                m_lighting->paintKey(code, false);
+            else
+                editBinding(code);
+        });
+        connect(v, &DeviceView::keyRightClicked, this, [this](int code) {
+            if (m_lighting->isPainting())
+                m_lighting->paintKey(code, true);
+        });
+    }
+    connect(m_lighting, &LightingPanel::previewChanged, m_keyboardView, &DeviceView::setKeyColours);
+    connect(m_lighting, &LightingPanel::paintingChanged, this, [this](bool on) {
+        for (DeviceView *v : {m_keyboardView, m_mouseView, static_cast<DeviceView *>(m_genericView)})
+            v->setPaintMode(on);
+        statusBar()->showMessage(on ? tr("Painting: click keys to colour them, right-click to unlight them") : QString(),
+                                 on ? 0 : 1);
+    });
     connect(addButton, &QPushButton::clicked, this, [this] { editBinding(-1); });
     connect(m_editButton, &QPushButton::clicked, this, [this] {
         if (auto *item = m_table->item(m_table->currentRow(), 0))

@@ -22,18 +22,25 @@ public:
     // Tint for bound keys; invalid = the palette's highlight colour.
     void setAccent(const QColor &accent);
     void setPressed(int code, bool pressed);
+    // The lighting to show: each key's (and edge LED's) colour; empty shows
+    // none.
+    void setKeyColours(const QHash<int, QColor> &keys);
+    // Painting lighting: clicks paint keys instead of editing bindings.
+    void setPaintMode(bool paint);
     void clearPressed();
 
 signals:
     void keyClicked(int code);
+    void keyRightClicked(int code);
 
 protected:
     struct Region
     {
-        int code = 0;     // 0 = drawn but not bindable (e.g. Fn)
+        int code = 0;     // 0 = drawn but not clickable
         QString label;
         QPainterPath path;
         bool compact = false; // too small to also show the binding
+        bool lightOnly = false; // only clickable while painting lighting (Fn, edge LEDs)
     };
 
     // Lay out regions in design units; the view scales them to fit.
@@ -48,6 +55,9 @@ protected:
     const Binding *bindingFor(int code, bool *inherited = nullptr) const;
     // Plain input codes with a binding here or in the fallback layer.
     QList<int> boundCodes() const;
+    // Whether the lighting shown includes the edge strips' LEDs.
+    bool showsEdgeLights() const;
+    bool paintMode() const { return m_paintMode; }
     // Lay the regions out again (the generic view's change with its inputs).
     void relayout();
     QColor accent() const { return m_accent.isValid() ? m_accent : palette().color(QPalette::Highlight); }
@@ -55,6 +65,7 @@ protected:
     void paintEvent(QPaintEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
+    void mouseReleaseEvent(QMouseEvent *) override;
     void leaveEvent(QEvent *) override;
     bool event(QEvent *) override;
     QSize minimumSizeHint() const override;
@@ -67,6 +78,10 @@ private:
     BindingMap m_bindings;
     BindingMap m_fallback;
     QColor m_accent;
+    QHash<int, QColor> m_keyColours;
+    bool m_paintMode = false;
+    int m_dragRegion = -1;                   // painting: the region the drag is over
+    Qt::MouseButton m_dragButton = Qt::NoButton;
     QSet<int> m_pressed;
     int m_hover = -1;
 };
@@ -79,7 +94,10 @@ public:
 
 protected:
     QVector<Region> regions() const override;
-    QSizeF designSize() const override { return {22.5, 7.0}; }
+    // With edge lighting shown, room around the keys for the light strips and
+    // the wrist rest below them.
+    QSizeF designSize() const override { return showsEdgeLights() ? QSizeF(23.7, 9.0) : QSizeF(22.5, 7.0); }
+    void paintDecoration(QPainter &) const override;
     void paintOverlay(QPainter &) const override;
 };
 

@@ -71,6 +71,12 @@ constexpr int WheelDown = 0x1001;
 // Pseudo target: hold for the Hypershift layer. Never emitted.
 constexpr int Hypershift = 0x1100;
 
+// Pseudo codes for the LEDs of a keyboard's edge light strips, by their place
+// in the LED matrix; only used for lighting.
+constexpr int EdgeLedBase = 0x2000;
+constexpr int edgeLed(int row, int column) { return EdgeLedBase + row * 32 + column; }
+constexpr bool isEdgeLed(int code) { return code >= EdgeLedBase && code < EdgeLedBase + 32 * 32; }
+
 // Turbo rates offered in the editor, in presses per second.
 constexpr int TurboMin = 1;
 constexpr int TurboMax = 50;

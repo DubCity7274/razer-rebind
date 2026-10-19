@@ -3,11 +3,13 @@
 #include <QHelpEvent>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPathStroker>
 #include <QToolTip>
 
 #include <linux/input-event-codes.h>
 
 #include <algorithm>
+#include <cmath>
 #include <tuple>
 
 namespace {
@@ -76,6 +78,28 @@ const Binding *DeviceView::bindingFor(int code, bool *inherited) const
     return nullptr;
 }
 
+void DeviceView::setKeyColours(const QHash<int, QColor> &keys)
+{
+    const bool edges = showsEdgeLights();
+    m_keyColours = keys;
+    if (showsEdgeLights() != edges)
+        relayout(); // the edge strips take room
+    else
+        update();
+}
+
+bool DeviceView::showsEdgeLights() const
+{
+    return std::any_of(m_keyColours.keyBegin(), m_keyColours.keyEnd(), Keys::isEdgeLed);
+}
+
+void DeviceView::setPaintMode(bool paint)
+{
+    m_paintMode = paint;
+    setCursor(paint ? Qt::CrossCursor : Qt::ArrowCursor);
+    update();
+}
+
 void DeviceView::setAccent(const QColor &accent)
 {
     m_accent = accent;
@@ -123,7 +147,7 @@ int DeviceView::regionAt(const QPointF &widgetPos) const
     const QPointF p = transform().inverted().map(widgetPos);
     // Later regions are drawn on top, so they win.
     for (int i = int(m_regions.size()) - 1; i >= 0; --i)
-        if (m_regions[i].code > 0 && m_regions[i].path.contains(p))
+        if (m_regions[i].code > 0 && (!m_regions[i].lightOnly || m_paintMode) && m_regions[i].path.contains(p))
             return i;
     return -1;
 }
@@ -141,6 +165,7 @@ void DeviceView::paintEvent(QPaintEvent *)
 
     paintDecoration(p);
 
+
     const QPalette pal = palette();
     const QColor base = pal.color(QPalette::Button);
     const QColor text = pal.color(QPalette::ButtonText);
@@ -153,13 +178,21 @@ void DeviceView::paintEvent(QPaintEvent *)
 
     for (int i = 0; i < m_regions.size(); ++i) {
         const Region &r = m_regions[i];
+        // Edge LEDs: a segment of the light strip in its colour.
+        if (Keys::isEdgeLed(r.code)) {
+            const QColor c = m_keyColours.value(r.code);
+            p.setPen(QPen(i == m_hover ? text : mix(base, text, 0.35), (i == m_hover ? 2.0 : 0.5) / unit));
+            p.setBrush(c.isValid() ? c : base);
+            p.drawPath(r.path);
+            continue;
+        }
         bool inherited = false;
         const Binding *binding = r.code > 0 ? bindingFor(r.code, &inherited) : nullptr;
         const bool bound = binding != nullptr;
         const bool disabled = bound && binding->targets.isEmpty();
 
         QColor fill = base;
-        if (r.code == 0)
+        if (r.code == 0 || (r.lightOnly && !m_paintMode))
             fill = mix(base, pal.color(QPalette::Window), 0.6);
         else if (bound && binding->isHypershift())
             fill = mix(base, hypershiftTint, inherited ? 0.25 : 0.45);
@@ -174,12 +207,21 @@ void DeviceView::paintEvent(QPaintEvent *)
         p.setBrush(fill);
         p.drawPath(r.path);
 
+        // Its LED colour, as a strip along the top of the keycap.
+        if (const auto led = m_keyColours.constFind(r.code); r.code > 0 && led != m_keyColours.constEnd()) {
+            const QRectF k = r.path.boundingRect();
+            const QRectF strip(k.left() + 0.12, k.top() + 0.06, k.width() - 0.24, std::min(0.13, k.height() * 0.15));
+            p.setPen(led->lightness() < 40 ? QPen(mix(base, text, 0.35), 0.5 / unit) : Qt::NoPen);
+            p.setBrush(*led);
+            p.drawRoundedRect(strip, 0.05, 0.05);
+        }
+
         // Text is drawn in device pixels so it stays crisp at any scale.
         const QRectF box = t.mapRect(r.path.boundingRect()).adjusted(3, 2, -3, -2);
         p.save();
         p.resetTransform();
         p.setPen(m_pressed.contains(r.code) ? pal.color(QPalette::HighlightedText)
-                                            : (r.code == 0 ? mix(text, base, 0.5) : text));
+                                            : (r.code == 0 || r.lightOnly ? mix(text, base, 0.5) : text));
         const bool showBinding = bound && !r.compact && box.height() > unit * 0.7;
         labelFont.setPixelSize(std::max(8, int(unit * textScale() * (r.label.size() > 4 ? 0.22 : 0.28))));
         p.setFont(labelFont);
@@ -203,20 +245,39 @@ void DeviceView::paintEvent(QPaintEvent *)
 void DeviceView::mouseMoveEvent(QMouseEvent *e)
 {
     const int hover = regionAt(e->position());
+    if (m_dragButton != Qt::NoButton && hover >= 0 && hover != m_dragRegion) {
+        m_dragRegion = hover;
+        if (m_dragButton == Qt::LeftButton)
+            emit keyClicked(m_regions[hover].code);
+        else if (m_dragButton == Qt::RightButton)
+            emit keyRightClicked(m_regions[hover].code);
+    }
     if (hover != m_hover) {
         m_hover = hover;
-        setCursor(hover >= 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
+        setCursor(m_paintMode ? Qt::CrossCursor : hover >= 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
         update();
     }
 }
 
 void DeviceView::mousePressEvent(QMouseEvent *e)
 {
-    if (e->button() != Qt::LeftButton)
-        return;
     const int i = regionAt(e->position());
-    if (i >= 0)
+    // While painting, holding the button down and moving paints every key
+    // passed over.
+    m_dragButton = m_paintMode ? e->button() : Qt::NoButton;
+    m_dragRegion = i;
+    if (i < 0)
+        return;
+    if (e->button() == Qt::LeftButton)
         emit keyClicked(m_regions[i].code);
+    else if (e->button() == Qt::RightButton)
+        emit keyRightClicked(m_regions[i].code);
+}
+
+void DeviceView::mouseReleaseEvent(QMouseEvent *)
+{
+    m_dragButton = Qt::NoButton;
+    m_dragRegion = -1;
 }
 
 void DeviceView::leaveEvent(QEvent *)
@@ -235,7 +296,14 @@ bool DeviceView::event(QEvent *e)
             return true;
         }
         const int code = m_regions[i].code;
-        QString tip = QStringLiteral("<b>%1</b> <code>%2</code>").arg(Keys::label(code), Keys::name(code));
+        QString tip = Keys::isEdgeLed(code) ? tr("<b>Edge light</b>")
+                                            : QStringLiteral("<b>%1</b> <code>%2</code>").arg(Keys::label(code), Keys::name(code));
+        if (const auto led = m_keyColours.constFind(code); led != m_keyColours.constEnd())
+            tip += tr("<br>Light: %1").arg(led->name());
+        if (m_paintMode) {
+            QToolTip::showText(he->globalPos(), tip + tr("<br>Click to paint, right-click to unlight"), this);
+            return true;
+        }
         bool inherited = false;
         if (const Binding *b = bindingFor(code, &inherited))
             tip += QStringLiteral("<br>→ ") + Keys::bindingLabel(*b).toHtmlEscaped()
@@ -295,18 +363,109 @@ QVector<DeviceView::Region> KeyboardView::regions() const
                   {Gap, "", 1.25}, {KEY_UP, "↑", 1}, {Gap, "", 1.25},
                   {KEY_KP1, "1", 1}, {KEY_KP2, "2", 1}, {KEY_KP3, "3", 1}});
     row(4.25, 21.5, {{KEY_KPENTER, "Enter", 1}}, 2);
-    // Fn is handled inside the razerkbd driver and never reaches userspace.
+    // Fn is handled inside the razerkbd driver and never reaches userspace,
+    // so it can't be bound; it has an LED, so it can be painted.
     row(5.25, 0, {{KEY_LEFTCTRL, "Ctrl", 1.25}, {KEY_LEFTMETA, "Super", 1.25}, {KEY_LEFTALT, "Alt", 1.25},
-                  {KEY_SPACE, "Space", 6.25}, {KEY_RIGHTALT, "Alt", 1.25}, {0, "Fn", 1.25},
+                  {KEY_SPACE, "Space", 6.25}, {KEY_RIGHTALT, "Alt", 1.25}, {KEY_FN, "Fn", 1.25},
                   {KEY_COMPOSE, "Menu", 1.25}, {KEY_RIGHTCTRL, "Ctrl", 1.25},
                   {Gap, "", 0.25}, {KEY_LEFT, "←", 1}, {KEY_DOWN, "↓", 1}, {KEY_RIGHT, "→", 1},
                   {Gap, "", 0.25}, {KEY_KP0, "0", 2}, {KEY_KPDOT, ".", 1}});
     // The multi-function dial reports volume up/down when turned.
     row(6.25, 18.5, {{KEY_VOLUMEDOWN, "Dial ⟲", 2}, {KEY_VOLUMEUP, "Dial ⟳", 2}}, 0.75);
-    for (Region &r : out)
+    for (Region &r : out) {
         if (r.path.boundingRect().height() < 0.8)
             r.compact = true;
+        if (r.code == KEY_FN)
+            r.lightOnly = true;
+    }
+
+    if (!showsEdgeLights())
+        return out;
+    // Room for the strips: move the keys in, then lay the strips' LEDs out
+    // along a rounded outline, so the segments at the corners bend around
+    // them like the real strip.
+    constexpr qreal Shift = 0.6;
+    for (Region &r : out)
+        r.path.translate(Shift, Shift);
+
+    // Segments [from, to) of a path, by length, each stroked into a rounded
+    // band; `lengths` gives each LED's share of the path.
+    auto lay = [&out](const QPainterPath &path, qreal from, qreal to, const QList<int> &leds) {
+        const qreal total = path.length();
+        auto at = [&](qreal len) {
+            len = std::fmod(std::fmod(len, total) + total, total);
+            return path.pointAtPercent(path.percentAtLength(len));
+        };
+        QPainterPathStroker stroker;
+        stroker.setWidth(0.2);
+        stroker.setCapStyle(Qt::RoundCap);
+        stroker.setJoinStyle(Qt::RoundJoin);
+        const qreal step = (to - from) / leds.size();
+        for (int i = 0; i < leds.size(); ++i) {
+            // A small gap between segments, like the LEDs' light pools.
+            const qreal a = from + step * i + 0.09, b = from + step * (i + 1) - 0.09;
+            QPainterPath line(at(a));
+            constexpr int Samples = 10;
+            for (int k = 1; k <= Samples; ++k)
+                line.lineTo(at(a + (b - a) * k / Samples));
+            out.push_back(Region{leds[i], QString(), stroker.createStroke(line), true, true});
+        }
+    };
+    auto leds = [](int row, int first, int last) {
+        QList<int> list;
+        if (first <= last)
+            for (int c = first; c <= last; ++c)
+                list << Keys::edgeLed(row, c);
+        else
+            for (int c = first; c >= last; --c)
+                list << Keys::edgeLed(row, c);
+        return list;
+    };
+
+    // The keyboard's outline, clockwise from the top-left corner's straight.
+    const qreal l = 0.25, t = 0.25, r = Shift + 22.5 + 0.35, b = Shift + 7.0 + 0.3, rr = 0.45;
+    QPainterPath ring(QPointF(l + rr, t));
+    ring.lineTo(r - rr, t);
+    ring.arcTo(QRectF(r - 2 * rr, t, 2 * rr, 2 * rr), 90, -90);
+    ring.lineTo(r, b - rr);
+    ring.arcTo(QRectF(r - 2 * rr, b - 2 * rr, 2 * rr, 2 * rr), 0, -90);
+    ring.lineTo(l + rr, b);
+    ring.arcTo(QRectF(l, b - 2 * rr, 2 * rr, 2 * rr), 270, -90);
+    ring.lineTo(l, t + rr);
+    ring.arcTo(QRectF(l, t, 2 * rr, 2 * rr), 180, -90);
+    const qreal arc = M_PI * rr / 2, w = r - l - 2 * rr, h = b - t - 2 * rr;
+    // Each side takes half of the corner on either end. Clockwise: top left
+    // to right, right side down, front right to left, left side up.
+    qreal pos = -arc / 2;
+    lay(ring, pos, pos + w + arc, leds(6, 0, 14));
+    pos += w + arc;
+    lay(ring, pos, pos + h + arc, leds(6, 15, 18) << leds(8, 17, 18));
+    pos += h + arc;
+    lay(ring, pos, pos + w + arc, leds(7, 18, 4));
+    pos += w + arc;
+    lay(ring, pos, pos + h + arc, leds(8, 1, 0) << leds(7, 3, 0));
+
+    // The wrist rest's strip: up its left end, along the front, up the right.
+    const qreal wl = Shift + 0.8, wr = Shift + 21.7, wt = 8.0, wb = 8.75, wrr = 0.4;
+    QPainterPath rest(QPointF(wl, wt));
+    rest.lineTo(wl, wb - wrr);
+    rest.arcTo(QRectF(wl, wb - 2 * wrr, 2 * wrr, 2 * wrr), 180, 90);
+    rest.lineTo(wr - wrr, wb);
+    rest.arcTo(QRectF(wr - 2 * wrr, wb - 2 * wrr, 2 * wrr, 2 * wrr), 270, 90);
+    rest.lineTo(wr, wt);
+    lay(rest, 0, rest.length(), leds(8, 2, 16) << Keys::edgeLed(8, 19));
     return out;
+}
+
+void KeyboardView::paintDecoration(QPainter &p) const
+{
+    if (!showsEdgeLights())
+        return;
+    // The wrist rest's outline, with its strip along the front.
+    const QPalette pal = palette();
+    p.setPen(QPen(pal.color(QPalette::Mid), 1.0 / p.transform().m11()));
+    p.setBrush(mix(pal.color(QPalette::Window), pal.color(QPalette::Button), 0.5));
+    p.drawRoundedRect(QRectF(0.6 + 0.8, 7.7, 20.9, 1.05), 0.4, 0.4);
 }
 
 void KeyboardView::paintOverlay(QPainter &p) const
@@ -318,8 +477,10 @@ void KeyboardView::paintOverlay(QPainter &p) const
     f.setPixelSize(std::max(8, int(t.m11() * 0.22)));
     p.setFont(f);
     p.setPen(palette().color(QPalette::PlaceholderText));
-    p.drawText(t.mapRect(QRectF(0, 6.3, 18, 0.6)), Qt::AlignLeft | Qt::AlignVCenter,
-               tr("Click a key to rebind it. Keys light up while held."));
+    const qreal shift = showsEdgeLights() ? 0.6 : 0;
+    p.drawText(t.mapRect(QRectF(shift, 6.3 + shift, 18, 0.6)), Qt::AlignLeft | Qt::AlignVCenter,
+               paintMode() ? tr("Click or drag over keys and edge lights to paint them; right-click to unlight.")
+                           : tr("Click a key to rebind it. Keys light up while held."));
     p.restore();
 }
 

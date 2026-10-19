@@ -186,12 +186,21 @@ LightingSettings lightingFromJson(const QJsonObject &o)
     l.speed = std::clamp(o.value(QStringLiteral("speed")).toInt(2), 1, 3);
     l.direction = o.value(QStringLiteral("direction")).toString() == QLatin1String("left") ? 2 : 1;
     l.brightness = std::clamp(o.value(QStringLiteral("brightness")).toInt(100), 0, 100);
+    const QJsonObject keys = o.value(QStringLiteral("keys")).toObject();
+    for (auto it = keys.begin(); it != keys.end(); ++it)
+        if (const int code = Keys::fromName(it.key()); code > 0)
+            if (const QColor c(it.value().toString()); c.isValid())
+                l.keys.insert(code, c);
+    if (const QColor c(o.value(QStringLiteral("unlit")).toString()); c.isValid())
+        l.unlit = c;
+    if (const QColor c(o.value(QStringLiteral("edge")).toString()); c.isValid())
+        l.edge = c;
     return l;
 }
 
 QJsonObject lightingToJson(const LightingSettings &l)
 {
-    return {{QStringLiteral("effect"), LightingSettings::effectId(l.effect)},
+    QJsonObject o = {{QStringLiteral("effect"), LightingSettings::effectId(l.effect)},
             {QStringLiteral("colours"), l.colours == LightingSettings::TwoColours      ? QStringLiteral("two")
                                         : l.colours == LightingSettings::RandomColours ? QStringLiteral("random")
                                                                                        : QStringLiteral("one")},
@@ -200,6 +209,15 @@ QJsonObject lightingToJson(const LightingSettings &l)
             {QStringLiteral("speed"), l.speed},
             {QStringLiteral("direction"), l.direction == 2 ? QStringLiteral("left") : QStringLiteral("right")},
             {QStringLiteral("brightness"), l.brightness}};
+    if (!l.keys.isEmpty() || l.effect == LightingSettings::Custom) {
+        QJsonObject keys;
+        for (auto it = l.keys.cbegin(); it != l.keys.cend(); ++it)
+            keys.insert(Keys::name(it.key()), it->name());
+        o.insert(QStringLiteral("keys"), keys);
+        o.insert(QStringLiteral("unlit"), l.unlit.name());
+        o.insert(QStringLiteral("edge"), l.edge.name());
+    }
+    return o;
 }
 
 QString tr(const char *text)

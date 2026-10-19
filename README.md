@@ -20,8 +20,8 @@ drivers, runs on X11 and Wayland, and needs no root once installed.
 - **Turbo:** a key or button repeats as long as you hold it, from 1 to 50
   presses per second.
 - **Lighting:** static, breathing, spectrum, wave, reactive, starlight and
-  ripple effects with your colours and brightness, saved per profile, so a
-  game's profile can bring its own colours.
+  ripple effects, or paint each key its own colour on the keyboard picture,
+  saved per profile, so a game's profile can light up its own keys.
 - **DPI and polling rate:** set up to five DPI stages for the button under
   the mouse, and the polling rate. Each profile keeps its own, so a game's
   profile can bring its own sensitivity.
@@ -301,6 +301,19 @@ and brightness. Changes apply right away.
 | Reactive | colour, and how long a pressed key stays lit |
 | Starlight | one colour, two colours, or random, and speed (keyboards) |
 | Ripple | colour or random (keyboards, needs openrazer-daemon) |
+| Custom (per key) | a colour for each key, the unlit keys and the edges (Huntsman Elite) |
+
+**Custom (per key)** colours each key on its own. Turn on **Paint keys**,
+pick a **Brush** colour, and click keys on the keyboard picture, or drag
+across them, to paint them; the right button makes them unlit again. Fn can
+be painted too, and so can each segment of the light strips around the
+keyboard and the wrist rest, drawn around the picture. **Unlit keys** sets
+the colour of keys you haven't painted, **Edges** that of strip segments you
+haven't painted, and **Clear keys** starts over. While painting, clicks don't
+open bindings; turn **Paint keys** off to edit bindings again. The picture
+shows each key's colour as a strip on the keycap, and the light strips in
+their colours, for Custom and Static. Per-key lighting needs a map of where each key's LED sits,
+which only the Huntsman Elite has so far.
 
 Each device only lists the effects it supports. Like DPI, lighting is saved
 with the active profile, so switching profiles or starting a linked game

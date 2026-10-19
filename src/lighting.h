@@ -3,13 +3,14 @@
 #include "razerdevice.h"
 
 #include <QColor>
+#include <QHash>
 #include <QStringList>
 
 // A device's lighting: one effect for its main LEDs (a keyboard's keys, a
 // mouse's logo) and their brightness.
 struct LightingSettings
 {
-    enum Effect { None, Off, Static, Breathing, Spectrum, Wave, Reactive, Starlight, Ripple };
+    enum Effect { None, Off, Static, Breathing, Spectrum, Wave, Reactive, Starlight, Ripple, Custom };
     enum Colours { OneColour, TwoColours, RandomColours };
 
     Effect effect = None;  // None = leave the lighting alone
@@ -19,6 +20,11 @@ struct LightingSettings
     int speed = 2;         // 1 fast .. 3 slow (reactive: how long a key stays lit)
     int direction = 1;     // wave: 1 = right, 2 = left
     int brightness = 100;  // percent
+    // Custom: a colour per key (evdev code), the rest in `unlit`, and the
+    // light strips in `edge`.
+    QHash<int, QColor> keys;
+    QColor unlit = Qt::black;
+    QColor edge = Qt::black;
 
     bool isValid() const { return effect != None; }
     bool operator==(const LightingSettings &o) const;

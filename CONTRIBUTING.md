@@ -106,7 +106,12 @@ Lighting works the same way through the daemon's `razer.device.lighting.*`
 interfaces (the `logo` one on mice), falling back to the `matrix_effect_*`
 attributes. Only the daemon can say which effect is on, so without it the
 current lighting isn't shown until one is chosen. Ripple is animated by the
-daemon and needs it.
+daemon and needs it. Custom (per key) sends a whole frame, a row at a time
+(`setKeyRow`, or `matrix_custom_frame` without the daemon), built from the
+key-to-LED map in `src/ledmap.cpp`. The daemon doesn't remember custom
+frames, so the app sends the frame again whenever the device reappears.
+A map for another keyboard needs checking on the hardware: light single
+matrix cells and see which key they are.
 
 Automatic profile switching reads `/proc` every two seconds for the user's
 processes. A process is known by argv[0] (which holds the Windows path for
@@ -147,6 +152,7 @@ are polled once a minute on a background thread.
 | `src/sensor.*` | Mouse DPI stages and polling rate, through openrazer-daemon or sysfs |
 | `src/sensorpanel.*` | The DPI / polling rate bar in the main window |
 | `src/lighting.*` | Lighting effects and brightness, through openrazer-daemon or sysfs |
+| `src/ledmap.*` | Which LED of a keyboard's matrix each key lights (Huntsman Elite) |
 | `src/lightingpanel.*` | The lighting bar in the main window |
 | `src/processes.*` | The user's running programs, read from `/proc` |
 | `src/autoswitcher.*` | Switches profiles while their linked programs run |

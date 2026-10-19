@@ -15,6 +15,8 @@ QString name(int code)
         return QStringLiteral("WHEEL_DOWN");
     if (code == Hypershift)
         return QStringLiteral("HYPERSHIFT");
+    if (isEdgeLed(code))
+        return QStringLiteral("EDGE_%1_%2").arg((code - EdgeLedBase) / 32).arg((code - EdgeLedBase) % 32);
     if (const char *n = libevdev_event_code_get_name(EV_KEY, code))
         return QString::fromLatin1(n);
     return QStringLiteral("KEY_%1").arg(code);
@@ -28,6 +30,12 @@ int fromName(const QString &name)
         return WheelDown;
     if (name == QLatin1String("HYPERSHIFT"))
         return Hypershift;
+    if (name.startsWith(QLatin1String("EDGE_"))) {
+        const QStringList parts = name.mid(5).split(QLatin1Char('_'));
+        bool okRow = false, okCol = false;
+        const int row = parts.value(0).toInt(&okRow), col = parts.value(1).toInt(&okCol);
+        return parts.size() == 2 && okRow && okCol && row >= 0 && row < 32 && col >= 0 && col < 32 ? edgeLed(row, col) : -1;
+    }
     const int code = libevdev_event_code_from_name(EV_KEY, name.toLatin1().constData());
     if (code >= 0)
         return code;
@@ -78,6 +86,8 @@ QString label(int code)
 {
     if (code == Hypershift)
         return QStringLiteral("Hypershift");
+    if (isEdgeLed(code))
+        return QStringLiteral("Edge light");
     const auto &pretty = prettyNames();
     if (auto it = pretty.constFind(code); it != pretty.constEnd())
         return it.value();
