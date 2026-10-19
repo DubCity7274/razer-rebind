@@ -13,6 +13,8 @@ drivers, runs on X11 and Wayland, and needs no root once installed.
   button and your keyboard keys do something else.
 - **Macros:** record a sequence of keys and buttons, with its timing, and
   play it from any key or button: once, repeating while held, or on/off.
+- **Launch anything:** a key or button can run a program, a script or any
+  shell command.
 - **Tap vs hold:** one key, two jobs. Tap Caps Lock for Esc, hold it for
   Ctrl; or tap Space for a space and hold it for Hypershift.
 - **Turbo:** a key or button repeats as long as you hold it, from 1 to 50
@@ -200,6 +202,19 @@ Pick how it plays:
 When a macro stops, any key it was holding is let go. A repeating macro
 without pauses waits 10 ms between rounds. Macros can't type text (only keys
 and buttons) and can't be combined with turbo or tap vs hold.
+
+### Running commands
+
+Choose **Run a command** in a binding and type a command, as you would in a
+terminal (`steam`, `playerctl play-pause`, `~/bin/toggle-vpn.sh`), or pick a
+program or script with **Browse…**. Each press runs it once, in the
+background, as your user; holding the key doesn't run it again, and its
+output is discarded. Commands work on combos and in the Hypershift layer, and
+the background service runs them too.
+
+When you import a profile that runs commands, Razer Rebind lists them and
+asks before importing: a shared profile could otherwise run anything on your
+computer.
 
 ### Tap vs hold
 
@@ -427,7 +442,8 @@ an input. `["HYPERSHIFT"]` makes a key a Hypershift key, a profile's
 written as `{ "keys": [...], "turbo": 15 }`; tap vs hold adds `"hold": [...]`
 and optionally `"holdTime"` in ms, and a macro is `"macro": [{"press":
 "KEY_A"}, {"delay": 50}, {"release": "KEY_A"}]` with an optional
-`"macroMode"` of `"while-held"` or `"toggle"`. A profile's `programs` lists the
+`"macroMode"` of `"while-held"` or `"toggle"`; `"command": "..."` runs a
+shell command. A profile's `programs` lists the
 programs that switch to it automatically, and `sensor` its DPI stages
 (`activeStage` counts from 1) and polling rate.
 

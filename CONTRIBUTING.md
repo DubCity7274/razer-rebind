@@ -108,6 +108,10 @@ Wine and Proton games), its executable and its kernel name. Before switching,
 the device's previous profile is saved to the config as `autoRestore`, so a
 restart in the middle of a game still switches back afterwards.
 
+Command bindings are signalled from the worker thread and started by the
+RemapManager with `QProcess::startDetached()` through `/bin/sh -c`, with
+standard input and output on `/dev/null`.
+
 Macros play in the worker thread on the same `ppoll()` timeouts as turbo:
 each playing macro has a step index and the time its next step is due, and
 remembers which keys it holds so stopping it releases them.

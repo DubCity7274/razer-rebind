@@ -109,6 +109,9 @@ public:
     // Checks a profile file and tells its profile name and the device it was
     // made for.
     static bool readProfileFile(const QByteArray &data, QString *name, QString *fromDevice, QString *error);
+    // The commands a profile file's bindings would run, to show before
+    // importing someone else's profile.
+    static QStringList profileFileCommands(const QByteArray &data);
     // Adds the file's profile to the device under a free name, which it
     // returns; empty on error.
     QString importProfile(const QString &device, const QByteArray &data, QString *error);

@@ -8,6 +8,7 @@
 #include "remapmanager.h"
 
 #include <QCoreApplication>
+#include <QFile>
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QThread>
@@ -152,6 +153,16 @@ int main(int argc, char **argv)
     switcher->update();
     CHECK(config.activeProfile(kbd) == QStringLiteral("Default"));
     stop(game);
+
+    // A binding's command runs through the shell, in the background.
+    {
+        const QString marker = dir.filePath(QStringLiteral("ran it"));
+        manager.runCommand(QStringLiteral("sleep 0.2; echo hi > '%1'").arg(marker));
+        CHECK(!QFile::exists(marker)); // didn't wait for it
+        for (int i = 0; i < 50 && !QFile::exists(marker); ++i)
+            QThread::msleep(20);
+        CHECK(QFile::exists(marker));
+    }
 
     if (g_failures)
         std::fprintf(stderr, "%d check(s) failed\n", g_failures);

@@ -31,17 +31,20 @@ struct Binding
     enum MacroMode { PlayOnce, RepeatWhileHeld, Toggle };
     QList<MacroStep> macro;
     MacroMode macroMode = PlayOnce;
+    // A shell command run when the input is pressed, instead of any keys.
+    QString command;
 
     bool isHypershift() const;
     bool isTapHold() const { return !hold.isEmpty(); }
     bool isMacro() const { return !macro.isEmpty(); }
+    bool isCommand() const { return !command.isEmpty(); }
     // Whether holding this input switches to the Hypershift layer.
     bool triggersHypershift() const;
     int effectiveHoldTime() const;
     bool operator==(const Binding &o) const
     {
         return targets == o.targets && turbo == o.turbo && hold == o.hold && effectiveHoldTime() == o.effectiveHoldTime()
-               && macro == o.macro && (macro.isEmpty() || macroMode == o.macroMode);
+               && macro == o.macro && (macro.isEmpty() || macroMode == o.macroMode) && command == o.command;
     }
 };
 

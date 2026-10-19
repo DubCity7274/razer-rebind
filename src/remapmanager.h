@@ -41,6 +41,9 @@ public:
     // Exact device key, or a unique case-insensitive part of one ("viper").
     QString resolveDevice(const QString &query, QString *error) const;
 
+    // Runs a binding's shell command in the background.
+    void runCommand(const QString &command);
+
     // Call after changing the config.
     void applyProfile();
     // The mouse already has these sensor settings (read from it), so

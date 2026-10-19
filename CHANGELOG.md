@@ -17,6 +17,10 @@
   combo's modifiers are lifted while its output goes out, so it can send a
   clean F5 or play a macro, and go back down if still held.
 
+- **Run a command.** A binding can run a program, script or shell command,
+  once per press and in the background. Importing a profile that runs
+  commands lists them and asks first.
+
 ### Changes
 
 - Counts such as "1 binding applied" read properly instead of

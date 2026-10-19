@@ -11,6 +11,7 @@
 class QCheckBox;
 class QGroupBox;
 class QLabel;
+class QLineEdit;
 class QRadioButton;
 class QSpinBox;
 class InputDetector;
@@ -82,6 +83,9 @@ private:
     QRadioButton *m_disable;
     QRadioButton *m_hypershift;
     QRadioButton *m_macro;
+    QRadioButton *m_command;
+    QLineEdit *m_commandEdit;
+    QPushButton *m_commandBrowse;
     QPushButton *m_macroEdit;
     QComboBox *m_macroMode;
     QLabel *m_macroSummary;

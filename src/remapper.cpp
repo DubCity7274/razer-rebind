@@ -559,6 +559,12 @@ void Remapper::processKey(int code, int value)
             b.targets = {code};
         if (combo)
             suspendModifiers(combo, code);
+        if (b.isCommand()) {
+            // Once per press; key repeat and the release do nothing.
+            m_held.insert(code, {});
+            emit commandTriggered(b.command);
+            return;
+        }
         if (b.isMacro()) {
             m_held.insert(code, {});
             const bool playing = m_macros.contains(code);
@@ -629,6 +635,10 @@ void Remapper::handleWheel(const input_event &ev)
     // The kernel reports each notch twice (REL_WHEEL and the high-resolution
     // REL_WHEEL_HI_RES); act on the classic one and swallow both. A notch
     // can't be held, so Hypershift and turbo don't apply.
+    if (ev.code == REL_WHEEL && b.isCommand()) {
+        emit commandTriggered(b.command);
+        return;
+    }
     if (ev.code == REL_WHEEL && !b.isHypershift()) {
         if (combo)
             suspendModifiers(combo, pseudo);

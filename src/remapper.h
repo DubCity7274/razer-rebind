@@ -50,6 +50,8 @@ signals:
     void inputEvent(int code, bool pressed);
     void stateChanged();
     void hotkeyTriggered(int action, const QString &profile, const QString &device);
+    // A binding asks to run this shell command. From the worker thread.
+    void commandTriggered(const QString &command);
     void failed(const QString &message);
     void disconnected();
 

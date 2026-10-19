@@ -1052,6 +1052,23 @@ void MainWindow::importProfile()
                                  tr("“%1” was made for the %2. Import it for the %3 anyway?").arg(name, from, device))
                != QMessageBox::Yes)
         return;
+    // A shared profile can run anything on this computer: show what first.
+    if (const QStringList commands = Config::profileFileCommands(data); !commands.isEmpty()) {
+        QMessageBox box(QMessageBox::Warning, tr("Import profile"),
+                        tr("“%1” runs these commands when you press its keys:").arg(name.toHtmlEscaped()),
+                        QMessageBox::NoButton, this);
+        box.setTextFormat(Qt::RichText);
+        QString list;
+        for (const QString &c : commands)
+            list += QStringLiteral("<pre>%1</pre>").arg(c.toHtmlEscaped());
+        box.setInformativeText(list + tr("Only import it if you trust where it came from and know what these do."));
+        QPushButton *import = box.addButton(tr("Import"), QMessageBox::AcceptRole);
+        box.addButton(QMessageBox::Cancel);
+        box.setDefaultButton(QMessageBox::Cancel);
+        box.exec();
+        if (box.clickedButton() != import)
+            return;
+    }
     const QString added = m_config->importProfile(device, data, &error);
     if (added.isEmpty()) {
         QMessageBox::warning(this, tr("Import profile"), error);

@@ -79,10 +79,13 @@ BindingMap bindingsFromJson(const QJsonObject &bindings)
             binding.macroMode = mode == QLatin1String("while-held") ? Binding::RepeatWhileHeld
                                 : mode == QLatin1String("toggle")   ? Binding::Toggle
                                                                     : Binding::PlayOnce;
-            if (binding.isMacro()) {
+            binding.command = o.value(QStringLiteral("command")).toString().trimmed();
+            if (binding.isMacro() || binding.isCommand()) {
                 binding.turbo = 0;
                 binding.hold.clear();
             }
+            if (binding.isCommand())
+                binding.macro.clear();
         }
         // A wheel notch can't be held; a tap can't be Hypershift.
         if (Keys::isWheel(Keys::triggerCode(source)))
@@ -109,8 +112,10 @@ QJsonObject bindingsToJson(const BindingMap &bindings)
         QJsonArray targets;
         for (int t : b.targets)
             targets.append(Keys::name(t));
-        if (b.turbo > 0 || b.isTapHold() || b.isMacro()) {
+        if (b.turbo > 0 || b.isTapHold() || b.isMacro() || b.isCommand()) {
             QJsonObject o{{QStringLiteral("keys"), targets}};
+            if (b.isCommand())
+                o.insert(QStringLiteral("command"), b.command);
             if (b.isMacro()) {
                 QJsonArray steps;
                 for (const MacroStep &st : b.macro) {
@@ -438,6 +443,17 @@ bool Config::readProfileFile(const QByteArray &data, QString *name, QString *fro
     if (fromDevice)
         *fromDevice = root.value(QStringLiteral("device")).toString();
     return true;
+}
+
+QStringList Config::profileFileCommands(const QByteArray &data)
+{
+    const Profile p = profileFromJson(QJsonDocument::fromJson(data).object().value(QStringLiteral("profile")).toObject());
+    QStringList out;
+    for (const BindingMap *layer : {&p.bindings, &p.hypershift})
+        for (auto it = layer->cbegin(); it != layer->cend(); ++it)
+            if (it->isCommand() && !out.contains(it->command))
+                out << it->command;
+    return out;
 }
 
 QString Config::importProfile(const QString &device, const QByteArray &data, QString *error)

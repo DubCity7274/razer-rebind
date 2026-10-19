@@ -102,6 +102,8 @@ QString comboLabel(const QList<int> &codes)
 
 QString bindingLabel(const Binding &binding, bool compact)
 {
+    if (binding.isCommand())
+        return compact ? QStringLiteral("Run") : QStringLiteral("Run: %1").arg(binding.command);
     if (binding.isMacro()) {
         int keys = 0;
         for (const MacroStep &st : binding.macro)

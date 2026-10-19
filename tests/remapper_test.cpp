@@ -531,6 +531,61 @@ int main(int argc, char **argv)
         kbd.remapper->setProfile(kp);
     }
 
+    // Commands: once per press, nothing typed, key repeat ignored; also on
+    // a combo, which still lifts and restores its modifiers.
+    {
+        std::mutex m;
+        QStringList ran;
+        QObject::connect(kbd.remapper, &Remapper::commandTriggered, kbd.remapper,
+                         [&](const QString &c) { std::lock_guard l(m); ran << c; }, Qt::DirectConnection);
+        DeviceProfile cmd = kp;
+        Binding run;
+        run.command = QStringLiteral("steam");
+        cmd.bindings.insert(KEY_F9, run);
+        run.command = QStringLiteral("playerctl play-pause");
+        cmd.hypershift.insert(KEY_F9, run);
+        run.command = QStringLiteral("echo combo");
+        cmd.bindings.insert(Keys::trigger(Keys::ModCtrl, KEY_F10), run);
+        kbd.remapper->setProfile(cmd);
+        takeOutput();
+
+        kbd.key(KEY_F9, 1);
+        kbd.key(KEY_F9, 2);
+        kbd.key(KEY_F9, 2);
+        kbd.key(KEY_F9, 0);
+        CHECK(takeOutput().empty());
+        kbd.key(KEY_CAPSLOCK, 1); // Hypershift
+        kbd.key(KEY_F9, 1);
+        kbd.key(KEY_F9, 0);
+        kbd.key(KEY_CAPSLOCK, 0);
+        kbd.key(KEY_LEFTCTRL, 1);
+        kbd.key(KEY_F10, 1);
+        kbd.key(KEY_F10, 0);
+        kbd.key(KEY_LEFTCTRL, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_LEFTCTRL, 1}, {KEY_LEFTCTRL, 0}, {KEY_LEFTCTRL, 1}, {KEY_LEFTCTRL, 0}}));
+        {
+            std::lock_guard l(m);
+            CHECK((ran == QStringList{QStringLiteral("steam"), QStringLiteral("playerctl play-pause"), QStringLiteral("echo combo")}));
+        }
+        QObject::disconnect(kbd.remapper, &Remapper::commandTriggered, kbd.remapper, nullptr);
+
+        // Saved, and found when importing a shared profile.
+        Config c;
+        c.load(dir.filePath(QStringLiteral("cmd.json")), nullptr);
+        c.ensureDevice(QStringLiteral("kbd"));
+        c.setDevice(QStringLiteral("kbd"), cmd);
+        CHECK(c.save(nullptr));
+        Config loaded;
+        CHECK(loaded.load(c.path(), nullptr));
+        CHECK(loaded.device(QStringLiteral("kbd")).bindings == cmd.bindings);
+        CHECK(loaded.device(QStringLiteral("kbd")).hypershift == cmd.hypershift);
+        const QStringList found = Config::profileFileCommands(c.exportProfile(QStringLiteral("kbd"), QStringLiteral("Default")));
+        CHECK(found.size() == 3 && found.contains(QStringLiteral("playerctl play-pause")));
+        CHECK(Config::profileFileCommands(Config().exportProfile(QStringLiteral("x"), QStringLiteral("y"))).isEmpty());
+
+        kbd.remapper->setProfile(kp);
+    }
+
     // A device that goes away while its Hypershift key is held doesn't leave
     // the other devices stuck in the layer.
     mouse.key(BTN_SIDE, 1);

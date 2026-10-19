@@ -9,6 +9,7 @@
 #include <QLocalServer>
 #include <QStandardPaths>
 #include <QLocalSocket>
+#include <QProcess>
 #include <QSet>
 
 #include <unistd.h>
@@ -155,6 +156,22 @@ void RemapManager::switchProfiles(const QHash<QString, QString> &profiles, const
         notify(changed.join(QLatin1Char('\n')), reason);
 }
 
+void RemapManager::runCommand(const QString &command)
+{
+    // Through the shell, so arguments, quotes, pipes and ~ work as in a
+    // terminal. Detached: it keeps running on its own and never holds up
+    // input. Its output goes nowhere.
+    QProcess p;
+    p.setProgram(QStringLiteral("/bin/sh"));
+    p.setArguments({QStringLiteral("-c"), command});
+    p.setWorkingDirectory(QDir::homePath());
+    p.setStandardInputFile(QProcess::nullDevice());
+    p.setStandardOutputFile(QProcess::nullDevice());
+    p.setStandardErrorFile(QProcess::nullDevice());
+    if (!p.startDetached())
+        emit message(tr("Could not run “%1”: %2").arg(command, p.errorString()));
+}
+
 void RemapManager::rescan()
 {
     const QList<RazerDevice> found = discoverRazerDevices();
@@ -217,6 +234,7 @@ void RemapManager::addRemapper(const RazerDevice &dev)
     connect(r, &Remapper::hotkeyTriggered, this, [this](int action, const QString &profile, const QString &device) {
         perform(Hotkey::Action(action), profile, device, m_config->notifications);
     });
+    connect(r, &Remapper::commandTriggered, this, &RemapManager::runCommand);
     connect(r, &Remapper::failed, this, [this, hidPath](const QString &msg) {
         m_errors.insert(hidPath, msg);
         emit message(msg);

@@ -9,6 +9,8 @@
 #include <QComboBox>
 #include <QCompleter>
 #include <QDialogButtonBox>
+#include <QDir>
+#include <QFileDialog>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -181,6 +183,12 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, b
     m_macroMode->addItem(tr("Play once"), Binding::PlayOnce);
     m_macroMode->addItem(tr("Repeat while held"), Binding::RepeatWhileHeld);
     m_macroMode->addItem(tr("Press to start, press again to stop"), Binding::Toggle);
+    m_command = new QRadioButton(tr("Run a command"));
+    m_commandEdit = new QLineEdit;
+    m_commandEdit->setPlaceholderText(tr("e.g. steam, or ~/bin/toggle-vpn.sh, or playerctl play-pause"));
+    m_commandEdit->setToolTip(tr("Runs through the shell, as you, in the background, once per press"));
+    m_commandBrowse = new QPushButton(tr("Browse…"));
+    m_commandBrowse->setAutoDefault(false);
     m_macroSummary = new QLabel;
     m_macroSummary->setStyleSheet(QStringLiteral("color: palette(placeholder-text);"));
     m_remap->setChecked(true);
@@ -224,6 +232,12 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, b
     macroRow->addWidget(m_macroMode);
     macroRow->addWidget(m_macroSummary, 1);
     outLayout->addLayout(macroRow);
+    outLayout->addWidget(m_command);
+    auto *commandRow = new QHBoxLayout;
+    commandRow->setContentsMargins(24, 0, 0, 0);
+    commandRow->addWidget(m_commandEdit, 1);
+    commandRow->addWidget(m_commandBrowse);
+    outLayout->addLayout(commandRow);
     auto *outputBox = new QGroupBox(tr("Do this instead"));
     outputBox->setLayout(outLayout);
 
@@ -285,11 +299,26 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, b
 
     connect(m_source, &KeyPicker::codeChanged, this, &BindingDialog::updateState);
     connect(m_key, &KeyPicker::codeChanged, this, &BindingDialog::updateState);
-    for (QAbstractButton *b : std::initializer_list<QAbstractButton *>{m_remap, m_disable, m_hypershift, m_macro, m_ctrl, m_shift, m_alt, m_super, m_turbo, m_holdKeys,
+    for (QAbstractButton *b : std::initializer_list<QAbstractButton *>{m_remap, m_disable, m_hypershift, m_macro, m_command, m_ctrl, m_shift, m_alt, m_super, m_turbo, m_holdKeys,
           m_holdHypershift, m_holdCtrl, m_holdShift, m_holdAlt, m_holdSuper})
         connect(b, &QAbstractButton::toggled, this, &BindingDialog::updateState);
     connect(m_holdBox, &QGroupBox::toggled, this, &BindingDialog::updateState);
     connect(m_macroMode, &QComboBox::currentIndexChanged, this, &BindingDialog::updateState);
+    connect(m_commandEdit, &QLineEdit::textEdited, this, [this] {
+        m_command->setChecked(true);
+        updateState();
+    });
+    connect(m_commandBrowse, &QPushButton::clicked, this, [this] {
+        const QString path = QFileDialog::getOpenFileName(this, tr("Choose a program or script"), QDir::homePath());
+        if (path.isEmpty())
+            return;
+        // Quoted for the shell, in case of spaces.
+        QString quoted = path;
+        quoted.replace(QLatin1Char('\''), QStringLiteral("'\\''"));
+        m_commandEdit->setText(QLatin1Char('\'') + quoted + QLatin1Char('\''));
+        m_command->setChecked(true);
+        updateState();
+    });
     connect(m_macroEdit, &QPushButton::clicked, this, [this] {
         // Detecting the input and recording would both listen to the device.
         m_detector->stop();
@@ -343,6 +372,14 @@ void BindingDialog::setBinding(const Binding &binding)
     const QList<int> &targets = binding.targets;
     m_macroSteps = binding.macro;
     m_macroMode->setCurrentIndex(m_macroMode->findData(binding.macroMode));
+    m_commandEdit->setText(binding.command);
+    if (binding.isCommand()) {
+        m_holdBox->setChecked(false);
+        m_turbo->setChecked(false);
+        m_command->setChecked(true);
+        updateState();
+        return;
+    }
     if (binding.isMacro()) {
         m_holdBox->setChecked(false);
         m_turbo->setChecked(false);
@@ -405,6 +442,10 @@ int BindingDialog::source() const
 Binding BindingDialog::binding() const
 {
     Binding b;
+    if (m_command->isChecked()) {
+        b.command = m_commandEdit->text().trimmed();
+        return b;
+    }
     if (m_macro->isChecked()) {
         b.macro = m_macroSteps;
         b.macroMode = Binding::MacroMode(m_macroMode->currentData().toInt());
@@ -469,12 +510,12 @@ void BindingDialog::updateState()
         m_remap->setChecked(true);
     // A macro is its own thing: no tap/hold or turbo on top. A wheel notch
     // can't be held, so it can only play once.
-    const bool macro = m_macro->isChecked();
+    const bool macro = m_macro->isChecked() || m_command->isChecked(); // neither combines with tap/hold
     if (macro && m_holdBox->isChecked())
         m_holdBox->setChecked(false);
     if (wheel && m_macroMode->currentIndex() != 0)
         m_macroMode->setCurrentIndex(0);
-    m_macroMode->setEnabled(macro && !wheel);
+    m_macroMode->setEnabled(m_macro->isChecked() && !wheel);
     m_macroEdit->setEnabled(true);
     m_macroSummary->setText(m_macroSteps.isEmpty() ? tr("no steps yet") : Keys::macroSummary(m_macroSteps));
     // A tap is over at once, so it can't hold the Hypershift layer or repeat.
@@ -494,7 +535,11 @@ void BindingDialog::updateState()
     const QList<int> out = targets();
     QString left = src > 0 ? Keys::triggerLabel(src).toHtmlEscaped() : tr("<i>choose an input</i>");
     QString right;
-    if (macro)
+    if (m_command->isChecked())
+        right = m_commandEdit->text().trimmed().isEmpty()
+                    ? tr("<i>enter a command</i>")
+                    : tr("run <code>%1</code>").arg(m_commandEdit->text().trimmed().toHtmlEscaped());
+    else if (m_macro->isChecked())
         right = m_macroSteps.isEmpty() ? tr("<i>record or add steps</i>") : Keys::bindingLabel(binding()).toHtmlEscaped();
     else if (tapHold && !holdTargets().isEmpty())
         right = Keys::bindingLabel(binding()).toHtmlEscaped();
@@ -517,6 +562,10 @@ void BindingDialog::accept()
     }
     if (m_remap->isChecked() && (targets().isEmpty() || m_key->code() < 0)) {
         QMessageBox::warning(this, windowTitle(), tr("Choose the key or shortcut to send, or pick \"Do nothing\"."));
+        return;
+    }
+    if (m_command->isChecked() && m_commandEdit->text().trimmed().isEmpty()) {
+        QMessageBox::warning(this, windowTitle(), tr("Enter the command to run."));
         return;
     }
     if (m_macro->isChecked() && m_macroSteps.isEmpty()) {
