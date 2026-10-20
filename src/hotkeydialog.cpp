@@ -73,6 +73,9 @@ HotkeyEditDialog::HotkeyEditDialog(RemapManager *manager, const Config *config, 
     m_action->addItem(tr("Previous profile"), Hotkey::PreviousProfile);
     m_action->addItem(tr("Turn remapping on/off"), Hotkey::ToggleRemapping);
     m_action->addItem(tr("Turn game mode on/off"), Hotkey::ToggleGameMode);
+    m_action->addItem(tr("Turn the lighting on/off"), Hotkey::ToggleLighting);
+    m_action->addItem(tr("Brighter lighting"), Hotkey::BrightnessUp);
+    m_action->addItem(tr("Dimmer lighting"), Hotkey::BrightnessDown);
     m_device = new QComboBox;
     m_device->addItem(tr("All devices"), QString());
     for (const QString &d : config->deviceKeys())
@@ -169,7 +172,7 @@ Hotkey HotkeyEditDialog::hotkey() const
     h.action = Hotkey::Action(m_action->currentData().toInt());
     if (h.action == Hotkey::SwitchProfile)
         h.profile = m_profile->currentText();
-    if (h.action != Hotkey::ToggleRemapping && h.action != Hotkey::ToggleGameMode)
+    if (h.action != Hotkey::ToggleRemapping && h.action != Hotkey::ToggleGameMode && h.action != Hotkey::ToggleLighting)
         h.device = m_device->currentData().toString();
     return h;
 }
@@ -178,7 +181,8 @@ void HotkeyEditDialog::updateState()
 {
     const Hotkey h = hotkey();
     m_profile->setEnabled(h.action == Hotkey::SwitchProfile);
-    m_device->setEnabled(h.action != Hotkey::ToggleRemapping && h.action != Hotkey::ToggleGameMode);
+    m_device->setEnabled(h.action != Hotkey::ToggleRemapping && h.action != Hotkey::ToggleGameMode
+                         && h.action != Hotkey::ToggleLighting);
     m_preview->setText(QStringLiteral("<b>%1</b> &nbsp;→&nbsp; %2")
                            .arg(h.code > 0 ? h.triggerLabel().toHtmlEscaped() : tr("<i>choose a key</i>"),
                                 h.actionLabel().toHtmlEscaped()));

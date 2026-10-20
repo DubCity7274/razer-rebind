@@ -67,6 +67,10 @@ public:
 
     void setLightsOff(bool off);
     bool lightsOff() const { return m_lightsOff; }
+    // Lighting switched off by hand (a hotkey); idle and locked come on top.
+    bool lightsOffByHand() const { return m_lightsOffByHand; }
+    // Brightness of the active profiles' lighting, in steps of 10%.
+    void stepBrightness(const QString &device, int step, bool notifyUser);
 
     // Accept commands from `razer-rebind --profile ...` and friends.
     bool listen();
@@ -84,6 +88,7 @@ signals:
     void message(const QString &text);
     // Input on a Razer device after Remapper::requestActivitySignal().
     void activity();
+    void lightsOffByHandChanged();
 
 private slots:
     void onNotificationClosed(uint id, uint reason);
@@ -108,6 +113,7 @@ private:
     QThreadPool m_sensorQueue;
     QHash<QString, std::shared_ptr<std::atomic<int>>> m_clutchRestore; // by hidPath: DPI to go back to
     bool m_lightsOff = false;
+    bool m_lightsOffByHand = false;
     // By hidPath: what a device without profile lighting had before lights
     // out; filled and used by tasks on m_sensorQueue, which run in order.
     QHash<QString, std::shared_ptr<LightingSettings>> m_lightsBefore;

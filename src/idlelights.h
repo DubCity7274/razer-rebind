@@ -30,4 +30,5 @@ private:
     QTimer m_timer;
     bool m_locked = false;
     bool m_idle = false;
+    bool m_byHand = false; // the lighting hotkey's state last seen
 };

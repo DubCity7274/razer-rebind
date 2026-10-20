@@ -292,6 +292,11 @@ the new DPI as a notification, and is kept in the profile like the DPI
 button's. Each change takes the mouse's driver about 60 ms over the wireless
 link, so the clutch kicks in just after you press it.
 
+A wireless mouse also gets **Sleep after** (how long it waits without use
+before it sleeps, 1 to 15 minutes) and **Low battery light at** (the charge
+at which its own light starts warning, 5 to 25%; Razer mice don't go
+higher). These are kept in the mouse, so they're the same in every profile.
+
 Each profile keeps its own DPI and polling rate, so switching profiles, by
 hand, by hotkey or when a game starts, changes them too. The first time you
 change them, your other profiles keep the mouse's current settings. With
@@ -380,7 +385,9 @@ in any application, including full-screen games. A hotkey can:
 - switch to a specific profile,
 - go to the next or previous profile,
 - turn remapping on or off,
-- turn game mode on or off.
+- turn game mode on or off,
+- turn the lighting off and on again (idle and the screen lock still apply
+  on top), or make it brighter or dimmer in steps of 10%.
 
 Each hotkey applies to one device or to all devices. For example:
 

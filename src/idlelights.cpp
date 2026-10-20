@@ -29,6 +29,7 @@ IdleLights::IdleLights(RemapManager *manager, Config *config, QObject *parent)
     connect(&m_timer, &QTimer::timeout, this, &IdleLights::update);
     m_timer.start();
     connect(m_manager, &RemapManager::activity, this, &IdleLights::onActivity);
+    connect(m_manager, &RemapManager::lightsOffByHandChanged, this, &IdleLights::update);
 
     // The desktop's screen locker (KDE, GNOME and others implement this).
     QDBusConnection bus = QDBusConnection::sessionBus();
@@ -46,14 +47,20 @@ void IdleLights::update()
 {
     const qint64 idleNs = nowNs() - Remapper::lastActivityNs();
     m_idle = m_config->lightsOffIdle && idleNs > qint64(m_config->lightsOffIdleMinutes) * 60 * 1000000000;
-    const bool off = m_idle || (m_locked && m_config->lightsOffLocked);
+    const bool byHand = m_manager->lightsOffByHand();
+    const bool off = byHand || m_idle || (m_locked && m_config->lightsOffLocked);
+    // The lighting hotkey reports its own changes.
+    const bool hotkey = byHand != m_byHand;
+    m_byHand = byHand;
     if (off != m_manager->lightsOff()) {
         m_manager->setLightsOff(off);
-        const int minutes = m_config->lightsOffIdleMinutes;
-        emit m_manager->message(off ? (m_idle ? (minutes == 1 ? tr("Lighting off: no input for a minute")
-                                                              : tr("Lighting off: no input for %1 minutes").arg(minutes))
-                                              : tr("Lighting off while the screen is locked"))
-                                    : tr("Lighting back on"));
+        if (!hotkey) {
+            const int minutes = m_config->lightsOffIdleMinutes;
+            emit m_manager->message(off ? (m_idle ? (minutes == 1 ? tr("Lighting off: no input for a minute")
+                                                                  : tr("Lighting off: no input for %1 minutes").arg(minutes))
+                                                  : tr("Lighting off while the screen is locked"))
+                                        : tr("Lighting back on"));
+        }
     }
     // Wake up on the very next input instead of the next check.
     if (m_idle)

@@ -283,3 +283,48 @@ bool Sensor::setCurrentDpi(int dpi, QString *error) const
     appendBigEndian16(data, dpi);
     return writeRaw(m_device.hidPath + QStringLiteral("/dpi"), data, error);
 }
+
+bool Sensor::hasPowerSettings() const
+{
+    return QFileInfo::exists(m_device.hidPath + QStringLiteral("/device_idle_time"))
+           && QFileInfo::exists(m_device.hidPath + QStringLiteral("/charge_low_threshold"));
+}
+
+int Sensor::idleSeconds() const
+{
+    bool ok = false;
+    const int s = m_device.attribute("device_idle_time").toInt(&ok);
+    return ok ? s : -1;
+}
+
+bool Sensor::setIdleSeconds(int seconds, QString *error) const
+{
+    seconds = std::clamp(seconds, 60, 900);
+    // The driver takes effect; the daemon is told too so it doesn't put
+    // its own value back when the mouse reconnects.
+    if (!writeRaw(m_device.hidPath + QStringLiteral("/device_idle_time"), QByteArray::number(seconds), error))
+        return false;
+    if (daemonAvailable())
+        call(m_daemonPath, QStringLiteral("razer.device.power"), QStringLiteral("setIdleTime"),
+             {QVariant::fromValue(quint16(seconds))});
+    return true;
+}
+
+int Sensor::lowBatteryPercent() const
+{
+    bool ok = false;
+    const int raw = m_device.attribute("charge_low_threshold").toInt(&ok);
+    return ok ? (raw * 100 + 127) / 255 : -1;
+}
+
+bool Sensor::setLowBatteryPercent(int percent, QString *error) const
+{
+    percent = std::clamp(percent, 5, 25); // the firmware cuts higher values to 25%
+    if (!writeRaw(m_device.hidPath + QStringLiteral("/charge_low_threshold"), QByteArray::number(percent * 255 / 100),
+                  error))
+        return false;
+    if (daemonAvailable())
+        call(m_daemonPath, QStringLiteral("razer.device.power"), QStringLiteral("setLowBatteryThreshold"),
+             {QVariant::fromValue(uchar(percent))});
+    return true;
+}

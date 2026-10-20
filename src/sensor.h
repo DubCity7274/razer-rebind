@@ -43,6 +43,14 @@ public:
     int currentDpi(QString *error = nullptr) const;
     bool setCurrentDpi(int dpi, QString *error = nullptr) const;
 
+    // Wireless mice: after how long without use the mouse sleeps, and at
+    // what charge its own low-battery light comes on. Kept in the mouse.
+    bool hasPowerSettings() const;
+    int idleSeconds() const;         // -1 when unknown
+    bool setIdleSeconds(int seconds, QString *error = nullptr) const;
+    int lowBatteryPercent() const;   // -1 when unknown
+    bool setLowBatteryPercent(int percent, QString *error = nullptr) const;
+
     static constexpr int MinDpi = 100;
     static constexpr int MaxStages = 5;
 

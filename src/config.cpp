@@ -22,6 +22,9 @@ const struct { Hotkey::Action action; const char *id; } ActionIds[] = {
     {Hotkey::PreviousProfile, "previous-profile"},
     {Hotkey::ToggleRemapping, "toggle-remapping"},
     {Hotkey::ToggleGameMode, "toggle-game-mode"},
+    {Hotkey::ToggleLighting, "toggle-lighting"},
+    {Hotkey::BrightnessUp, "brightness-up"},
+    {Hotkey::BrightnessDown, "brightness-down"},
 };
 
 const struct { unsigned bit; const char *name; } ModifierNames[] = {
@@ -276,6 +279,9 @@ QString Hotkey::actionLabel() const
     case PreviousProfile: return tr("Previous profile (%1)").arg(who);
     case ToggleRemapping: return tr("Turn remapping on/off");
     case ToggleGameMode: return tr("Turn game mode on/off");
+    case ToggleLighting: return tr("Turn the lighting on/off");
+    case BrightnessUp: return tr("Brighter lighting (%1)").arg(who);
+    case BrightnessDown: return tr("Dimmer lighting (%1)").arg(who);
     }
     return {};
 }
@@ -440,7 +446,8 @@ bool Config::save(QString *error) const
                 o.insert(QStringLiteral("action"), QLatin1String(a.id));
         if (h.action == Hotkey::SwitchProfile)
             o.insert(QStringLiteral("profile"), h.profile);
-        if (!h.device.isEmpty() && h.action != Hotkey::ToggleRemapping && h.action != Hotkey::ToggleGameMode)
+        if (!h.device.isEmpty() && h.action != Hotkey::ToggleRemapping && h.action != Hotkey::ToggleGameMode
+            && h.action != Hotkey::ToggleLighting)
             o.insert(QStringLiteral("device"), h.device);
         hotkeyArray.append(o);
     }

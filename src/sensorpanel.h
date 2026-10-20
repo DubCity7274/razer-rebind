@@ -56,6 +56,11 @@ private:
     QPushButton *m_remove;
     QComboBox *m_pollRate;
     QLabel *m_note;
+    QWidget *m_powerRow;
+    QSpinBox *m_sleep;       // minutes
+    QSpinBox *m_lowBattery;  // percent
+    QTimer m_powerTimer;
+    void commitPower();
     QTimer m_commitTimer;
     QTimer m_pollTimer;
     std::shared_ptr<std::atomic<bool>> m_polling = std::make_shared<std::atomic<bool>>(false);

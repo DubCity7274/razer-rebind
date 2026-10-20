@@ -49,7 +49,10 @@ struct DeviceProfile
 // (X11 or Wayland) without registering anything with the compositor.
 struct Hotkey
 {
-    enum Action { SwitchProfile, NextProfile, PreviousProfile, ToggleRemapping, ToggleGameMode };
+    enum Action {
+        SwitchProfile, NextProfile, PreviousProfile, ToggleRemapping, ToggleGameMode,
+        ToggleLighting, BrightnessUp, BrightnessDown,
+    };
 
     unsigned modifiers = 0; // Keys::Modifier bits
     int code = 0;           // key, mouse button or wheel pseudo code

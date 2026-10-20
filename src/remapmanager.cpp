@@ -102,6 +102,19 @@ QString RemapManager::resolveDevice(const QString &query, QString *error) const
 QString RemapManager::perform(Hotkey::Action action, const QString &profile, const QString &device,
                               bool notifyUser)
 {
+    if (action == Hotkey::ToggleLighting) {
+        m_lightsOffByHand = !m_lightsOffByHand;
+        emit lightsOffByHandChanged(); // IdleLights puts it into effect
+        const QString text = m_lightsOffByHand ? tr("Lighting off") : tr("Lighting on");
+        emit message(text);
+        if (notifyUser)
+            notify(text);
+        return text;
+    }
+    if (action == Hotkey::BrightnessUp || action == Hotkey::BrightnessDown) {
+        stepBrightness(device, action == Hotkey::BrightnessUp ? 10 : -10, notifyUser);
+        return tr("Brightness changed");
+    }
     if (action == Hotkey::ToggleGameMode) {
         toggleGameMode(notifyUser);
         return tr("Game mode toggled");
@@ -473,6 +486,51 @@ void RemapManager::checkGameLeds()
         if (m_config->notifications)
             notify(text, lit ? tr("Super is blocked until you turn it off or switch profile") : QString());
     }
+}
+
+void RemapManager::stepBrightness(const QString &device, int step, bool notifyUser)
+{
+    // Every device ends up at the same level, a step from the brightest one
+    // and on a multiple of 10, so they move together and the message is true.
+    QList<RazerDevice> targets;
+    int brightest = -1;
+    for (const RazerDevice &d : std::as_const(m_devices)) {
+        if ((!device.isEmpty() && d.profileKey != device) || !Lighting(d).hasBrightness())
+            continue;
+        if (!m_config->device(d.profileKey).lighting.isValid()) {
+            // First lighting change for the device: start from what it shows,
+            // and keep that in its other profiles.
+            LightingSettings now;
+            if (!Lighting(d).read(&now))
+                continue;
+            m_config->fillLighting(d.profileKey, now);
+        }
+        targets << d;
+        brightest = std::max(brightest, m_config->device(d.profileKey).lighting.brightness);
+    }
+    if (targets.isEmpty())
+        return;
+    const int level = std::clamp(step > 0 ? (brightest / 10 + 1) * 10 : ((brightest + 9) / 10 - 1) * 10, 0, 100);
+    QStringList changed;
+    for (const RazerDevice &d : std::as_const(targets)) {
+        DeviceProfile p = m_config->device(d.profileKey);
+        if (p.lighting.brightness == level)
+            continue;
+        p.lighting.brightness = level;
+        m_config->setDevice(d.profileKey, p);
+        changed << shortDeviceName(d.profileKey);
+    }
+    if (changed.isEmpty()) {
+        emit message(step > 0 ? tr("Lighting is already at full brightness") : tr("Lighting is already at its dimmest"));
+        return;
+    }
+    m_config->save(nullptr);
+    applyProfile();
+    emit profileChanged();
+    const QString text = tr("Brightness %1%").arg(level);
+    emit message(text);
+    if (notifyUser)
+        notify(text);
 }
 
 void RemapManager::setLightsOff(bool off)

@@ -45,9 +45,39 @@ SensorPanel::SensorPanel(Config *config, RemapManager *manager, QWidget *parent)
     row->addWidget(m_pollRate);
     row->addSpacing(16);
     row->addWidget(m_note, 1);
+    // Power, for wireless mice: settings kept in the mouse itself.
+    m_sleep = new QSpinBox;
+    m_sleep->setRange(1, 15);
+    m_sleep->setSuffix(tr(" min"));
+    m_sleep->setToolTip(tr("How long the mouse waits without use before it sleeps"));
+    m_lowBattery = new QSpinBox;
+    // Razer mice take 25% at most (higher values are cut to it).
+    m_lowBattery->setRange(5, 25);
+    m_lowBattery->setSingleStep(5);
+    m_lowBattery->setSuffix(tr("%"));
+    m_lowBattery->setToolTip(tr("Below this charge the mouse's own light warns about the battery"));
+    auto *powerNote = new QLabel(tr("Kept in the mouse, for every profile"));
+    powerNote->setStyleSheet(QStringLiteral("color: palette(placeholder-text);"));
+    m_powerRow = new QWidget;
+    auto *power = new QHBoxLayout(m_powerRow);
+    power->setContentsMargins(0, 0, 0, 0);
+    power->addWidget(new QLabel(tr("Sleep after:")));
+    power->addWidget(m_sleep);
+    power->addSpacing(16);
+    power->addWidget(new QLabel(tr("Low battery light at:")));
+    power->addWidget(m_lowBattery);
+    power->addSpacing(16);
+    power->addWidget(powerNote, 1);
+    m_powerTimer.setSingleShot(true);
+    m_powerTimer.setInterval(700);
+    connect(&m_powerTimer, &QTimer::timeout, this, &SensorPanel::commitPower);
+    for (QSpinBox *b : {m_sleep, m_lowBattery})
+        connect(b, &QSpinBox::valueChanged, this, [this] { m_powerTimer.start(); });
+
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 4);
     layout->addLayout(row);
+    layout->addWidget(m_powerRow);
 
     // Typing a DPI value goes through several numbers; apply once it settles.
     m_commitTimer.setSingleShot(true);
@@ -111,6 +141,16 @@ void SensorPanel::setDevice(const RazerDevice *device)
         m_manager->markSensorApplied(m_device.hidPath, p.sensor);
     }
     display(p.sensor.isValid() ? p.sensor : m_current);
+    m_powerTimer.stop();
+    m_powerRow->setVisible(sensor.hasPowerSettings());
+    if (sensor.hasPowerSettings()) {
+        QSignalBlocker a(m_sleep), b(m_lowBattery);
+        const int idle = sensor.idleSeconds(), low = sensor.lowBatteryPercent();
+        m_sleep->setValue(idle > 0 ? (idle + 30) / 60 : 5);
+        m_lowBattery->setValue(low > 0 ? std::min(25, (low + 2) / 5 * 5) : 25);
+        m_sleep->setEnabled(idle > 0);
+        m_lowBattery->setEnabled(low > 0);
+    }
     if (!m_current.isValid() && !p.sensor.isValid())
         m_note->setText(tr("The mouse didn't answer; is it asleep? %1").arg(error));
     QWidget::show();
@@ -244,4 +284,16 @@ void SensorPanel::updateNote()
     m_note->setText(m_config->device(m_device.profileKey).sensor.isValid()
                         ? tr("Saved with the “%1” profile").arg(profile)
                         : tr("Changes are saved with the “%1” profile").arg(profile));
+}
+
+void SensorPanel::commitPower()
+{
+    // Each is a round trip to the wireless mouse; don't hold up the window.
+    const RazerDevice device = m_device;
+    const int seconds = m_sleep->value() * 60, percent = m_lowBattery->value();
+    std::thread([device, seconds, percent] {
+        const Sensor sensor(device);
+        sensor.setIdleSeconds(seconds);
+        sensor.setLowBatteryPercent(percent);
+    }).detach();
 }

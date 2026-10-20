@@ -25,6 +25,10 @@
   lights the keyboard's game mode LED; with a linked game, only while it
   runs. The keyboard's own game mode key (Fn+F10) and a new hotkey action
   turn it on and off too.
+- **Mouse power settings.** Set how long a wireless mouse waits before it
+  sleeps and when its own low-battery light comes on.
+- **Lighting hotkeys.** Hotkeys can turn the lighting off and on again, or
+  make it brighter or dimmer.
 - **Accessories.** Mouse docks, headsets and other OpenRazer accessories
   appear in the device list with their lighting and profiles, so their
   lights follow your profiles and go off when idle too.
