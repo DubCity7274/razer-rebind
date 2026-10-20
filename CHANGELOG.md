@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0 (unreleased)
+## 1.0.0 (2026-10-19)
 
 ### New features
 
@@ -8,6 +8,8 @@
   breathing, spectrum, wave, reactive, starlight, ripple) with its colours,
   speed, direction and brightness. Each device lists the effects it
   supports: a keyboard's keys, a mouse's logo.
+- **Per-profile lighting.** Lighting is saved with the profile like DPI, so
+  switching profiles or starting a linked game changes it too.
 - **Per-key lighting** for the Huntsman Elite. Choose Custom, turn on
   **Paint keys** and click or drag across keys on the keyboard picture to
   colour them, Fn included. Each segment of the light strips around the
@@ -32,8 +34,14 @@
 - **Accessories.** Mouse docks, headsets and other OpenRazer accessories
   appear in the device list with their lighting and profiles, so their
   lights follow your profiles and go off when idle too.
-- **Per-profile lighting.** Lighting is saved with the profile like DPI, so
-  switching profiles or starting a linked game changes it too.
+
+### Changes
+
+- Macros, commands and DPI bindings are no longer shown in red as if they
+  were disabled.
+- Lighting falls back to the driver when openrazer-daemon has lost track of
+  a device (a wireless mouse asleep when the daemon started).
+- The README shows the app at the top.
 
 ## 0.9.0 (2026-10-19)
 

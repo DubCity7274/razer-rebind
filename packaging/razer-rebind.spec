@@ -1,5 +1,5 @@
 Name:           razer-rebind
-Version:        0.9.0
+Version:        1.0.0
 Release:        1%{?dist}
 Summary:        Key and button rebinding for Razer keyboards and mice (OpenRazer)
 
@@ -63,6 +63,12 @@ udevadm trigger --subsystem-match=input --subsystem-match=misc --action=change >
 %{_udevrulesdir}/70-%{name}.rules
 
 %changelog
+* Mon Oct 19 2026 dub <111620773+DubCity7274@users.noreply.github.com> - 1.0.0-1
+- Lighting: effects, per-key painting with the edge light strips, per
+  profile, off when idle or locked; docks and headsets
+- Sensitivity clutch and DPI stage bindings; mouse power settings
+- Game mode per profile with Fn+F10 and hotkeys; lighting hotkeys
+
 * Mon Oct 19 2026 dub <111620773+DubCity7274@users.noreply.github.com> - 0.9.0-1
 - Macros, key combos as binding inputs, and command bindings
 - Generic keycap view for devices without a picture

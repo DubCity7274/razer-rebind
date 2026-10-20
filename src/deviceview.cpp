@@ -189,7 +189,7 @@ void DeviceView::paintEvent(QPaintEvent *)
         bool inherited = false;
         const Binding *binding = r.code > 0 ? bindingFor(r.code, &inherited) : nullptr;
         const bool bound = binding != nullptr;
-        const bool disabled = bound && binding->targets.isEmpty();
+        const bool disabled = bound && binding->isDisabled();
 
         QColor fill = base;
         if (r.code == 0 || (r.lightOnly && !m_paintMode))

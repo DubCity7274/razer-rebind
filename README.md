@@ -1,4 +1,12 @@
-# Razer Rebind
+<p align="center">
+  <img src="data/razer-rebind.svg" width="96" alt="Razer Rebind icon">
+</p>
+
+<h1 align="center">Razer Rebind</h1>
+
+<p align="center">
+  <img src="docs/screenshot.png" alt="Razer Rebind showing a Huntsman Elite with per-key lighting, light strips, game mode and bindings for a Gaming profile">
+</p>
 
 Rebind the keys and buttons of Razer keyboards and mice on Linux. Razer
 Rebind works with the [OpenRazer](https://openrazer.github.io/) kernel

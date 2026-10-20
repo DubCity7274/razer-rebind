@@ -782,7 +782,7 @@ void MainWindow::refreshBindings()
         in->setData(Qt::UserRole, src);
         in->setToolTip(Keys::triggerName(src));
         auto *out = new QTableWidgetItem(b.isHypershift() ? tr("Hypershift (hold)") : Keys::bindingLabel(b));
-        if (b.targets.isEmpty())
+        if (b.isDisabled())
             out->setForeground(QColor(0xd3, 0x44, 0x44));
         else if (b.isHypershift())
             out->setForeground(QColor(0x96, 0x5a, 0xdc));

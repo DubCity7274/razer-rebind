@@ -44,6 +44,8 @@ struct Binding
     bool isMacro() const { return !macro.isEmpty(); }
     bool isCommand() const { return !command.isEmpty(); }
     bool isDpi() const { return dpi != NoDpi; }
+    // "Do nothing": no keys and nothing else to do instead.
+    bool isDisabled() const { return targets.isEmpty() && !isTapHold() && !isMacro() && !isCommand() && !isDpi(); }
     // Whether holding this input switches to the Hypershift layer.
     bool triggersHypershift() const;
     int effectiveHoldTime() const;
