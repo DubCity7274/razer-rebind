@@ -217,6 +217,38 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
     layerRow->addWidget(m_layerHypershift);
     layerRow->addSpacing(12);
     layerRow->addWidget(m_layerHint, 1);
+
+    // Game mode, for keyboards: saved with the profile, so a game's profile
+    // can block Super (and Alt+Tab, Alt+F4) while it runs.
+    m_gameMode = new QPushButton(tr("Game mode"));
+    m_gameMode->setCheckable(true);
+    m_gameMode->setAutoDefault(false);
+    m_gameMode->setToolTip(tr("Keep the keys ticked here from reaching the desktop while this profile is on, "
+                              "and light the keyboard's game mode LED"));
+    m_gameMode->setStyleSheet(QStringLiteral(
+        "QPushButton:checked { color: white; font-weight: bold; background: #2ea043;"
+        " border: 1px solid #2ea043; border-radius: 4px; padding: 4px 10px; }"));
+    // Wide enough for the bold label it gets when on.
+    {
+        QFont bold = m_gameMode->font();
+        bold.setBold(true);
+        m_gameMode->setMinimumWidth(QFontMetrics(bold).horizontalAdvance(m_gameMode->text()) + 28);
+    }
+    m_blockSuper = new QCheckBox(tr("Super"));
+    m_blockAltTab = new QCheckBox(tr("Alt+Tab"));
+    m_blockAltF4 = new QCheckBox(tr("Alt+F4"));
+    for (QCheckBox *cb : {m_blockSuper, m_blockAltTab, m_blockAltF4})
+        connect(cb, &QCheckBox::toggled, this, &MainWindow::storeGameMode);
+    connect(m_gameMode, &QPushButton::toggled, this, &MainWindow::storeGameMode);
+    m_gameWidget = new QWidget;
+    auto *gameRow = new QHBoxLayout(m_gameWidget);
+    gameRow->setContentsMargins(12, 0, 0, 0);
+    gameRow->setSpacing(8);
+    gameRow->addWidget(m_gameMode);
+    gameRow->addWidget(new QLabel(tr("blocks:")));
+    for (QCheckBox *cb : {m_blockSuper, m_blockAltTab, m_blockAltF4})
+        gameRow->addWidget(cb);
+    layerRow->addWidget(m_gameWidget);
     header->addWidget(m_layerRow, 3, 0, 1, 2);
 
     m_keyboardView = new KeyboardView;
@@ -591,6 +623,7 @@ void MainWindow::selectDevice()
                                  .arg(dev->profileKey));
     m_views->setCurrentWidget(accessory ? static_cast<QWidget *>(m_accessoryPage) : currentView());
     m_layerRow->setVisible(!accessory);
+    refreshGameMode();
     m_bindingArea->setVisible(!accessory);
     m_deviceEnabled->setVisible(!accessory);
     {
@@ -1163,4 +1196,43 @@ void MainWindow::refreshTrayIcon()
         return;
     m_trayIconKey = key;
     m_tray->setIcon(appIcon(m_manager->remappingEnabled(), lowest, charging, m_config->batteryThreshold));
+}
+
+void MainWindow::refreshGameMode()
+{
+    const RazerDevice *dev = current();
+    const bool keyboard = dev && dev->kind == RazerDevice::Keyboard;
+    m_gameWidget->setVisible(keyboard);
+    if (!keyboard)
+        return;
+    const GameMode g = m_config->device(dev->profileKey).gameMode;
+    for (QAbstractButton *b : std::initializer_list<QAbstractButton *>{m_gameMode, m_blockSuper, m_blockAltTab, m_blockAltF4})
+        b->blockSignals(true);
+    m_gameMode->setChecked(g.on);
+    m_blockSuper->setChecked(g.blockSuper);
+    m_blockAltTab->setChecked(g.blockAltTab);
+    m_blockAltF4->setChecked(g.blockAltF4);
+    for (QCheckBox *cb : {m_blockSuper, m_blockAltTab, m_blockAltF4})
+        cb->setEnabled(g.on);
+    for (QAbstractButton *b : std::initializer_list<QAbstractButton *>{m_gameMode, m_blockSuper, m_blockAltTab, m_blockAltF4})
+        b->blockSignals(false);
+}
+
+void MainWindow::storeGameMode()
+{
+    const RazerDevice *dev = current();
+    if (!dev || dev->kind != RazerDevice::Keyboard)
+        return;
+    DeviceProfile p = m_config->device(dev->profileKey);
+    p.gameMode.on = m_gameMode->isChecked();
+    p.gameMode.blockSuper = m_blockSuper->isChecked();
+    p.gameMode.blockAltTab = m_blockAltTab->isChecked();
+    p.gameMode.blockAltF4 = m_blockAltF4->isChecked();
+    m_config->setDevice(dev->profileKey, p);
+    saveProfile();
+    for (QCheckBox *cb : {m_blockSuper, m_blockAltTab, m_blockAltF4})
+        cb->setEnabled(p.gameMode.on);
+    statusBar()->showMessage(p.gameMode.on ? tr("Game mode on for the “%1” profile").arg(m_config->activeProfile(dev->profileKey))
+                                           : tr("Game mode off"),
+                             5000);
 }

@@ -20,6 +20,11 @@
   without input from your Razer devices, and while the screen is locked, and
   comes back with the next input or the unlock. Both can be changed or
   turned off in Settings.
+- **Game mode.** A keyboard profile can turn on game mode, which keeps
+  Super (and optionally Alt+Tab and Alt+F4) from reaching the desktop and
+  lights the keyboard's game mode LED; with a linked game, only while it
+  runs. The keyboard's own game mode key (Fn+F10) and a new hotkey action
+  turn it on and off too.
 - **Accessories.** Mouse docks, headsets and other OpenRazer accessories
   appear in the device list with their lighting and profiles, so their
   lights follow your profiles and go off when idle too.

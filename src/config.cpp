@@ -21,6 +21,7 @@ const struct { Hotkey::Action action; const char *id; } ActionIds[] = {
     {Hotkey::NextProfile, "next-profile"},
     {Hotkey::PreviousProfile, "previous-profile"},
     {Hotkey::ToggleRemapping, "toggle-remapping"},
+    {Hotkey::ToggleGameMode, "toggle-game-mode"},
 };
 
 const struct { unsigned bit; const char *name; } ModifierNames[] = {
@@ -237,6 +238,16 @@ QJsonObject lightingToJson(const LightingSettings &l)
     return o;
 }
 
+GameMode gameModeFromJson(const QJsonObject &o)
+{
+    GameMode g;
+    g.on = o.value(QStringLiteral("on")).toBool(false);
+    g.blockSuper = o.value(QStringLiteral("blockSuper")).toBool(true);
+    g.blockAltTab = o.value(QStringLiteral("blockAltTab")).toBool(false);
+    g.blockAltF4 = o.value(QStringLiteral("blockAltF4")).toBool(false);
+    return g;
+}
+
 QString tr(const char *text)
 {
     return QCoreApplication::translate("Hotkey", text);
@@ -264,6 +275,7 @@ QString Hotkey::actionLabel() const
     case NextProfile: return tr("Next profile (%1)").arg(who);
     case PreviousProfile: return tr("Previous profile (%1)").arg(who);
     case ToggleRemapping: return tr("Turn remapping on/off");
+    case ToggleGameMode: return tr("Turn game mode on/off");
     }
     return {};
 }
@@ -349,7 +361,7 @@ bool Config::load(const QString &path, QString *error)
                 const QJsonObject d = p.value(QStringLiteral("devices")).toObject().value(key).toObject();
                 if (name.isEmpty() || findProfile(key, name))
                     continue;
-                ds.profiles << Profile{name, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}, {}, {}, {}};
+                ds.profiles << Profile{name, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}, {}, {}, {}, {}};
                 if (name == active) {
                     ds.active = name;
                     ds.enabled = d.value(QStringLiteral("enabled")).toBool(true);
@@ -363,13 +375,13 @@ bool Config::load(const QString &path, QString *error)
             const QJsonObject d = it.value().toObject();
             DeviceSettings &ds = addDevice(it.key());
             ds.enabled = d.value(QStringLiteral("enabled")).toBool(true);
-            ds.profiles << Profile{DefaultProfile, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}, {}, {}, {}};
+            ds.profiles << Profile{DefaultProfile, bindingsFromJson(d.value(QStringLiteral("bindings")).toObject()), {}, {}, {}, {}, {}};
         }
     }
 
     for (auto it = m_devices.begin(); it != m_devices.end(); ++it) {
         if (it->profiles.isEmpty())
-            it->profiles << Profile{DefaultProfile, {}, {}, {}, {}, {}};
+            it->profiles << Profile{DefaultProfile, {}, {}, {}, {}, {}, {}};
         if (!findProfile(it.key(), it->active))
             it->active = it->profiles.first().name;
     }
@@ -428,7 +440,7 @@ bool Config::save(QString *error) const
                 o.insert(QStringLiteral("action"), QLatin1String(a.id));
         if (h.action == Hotkey::SwitchProfile)
             o.insert(QStringLiteral("profile"), h.profile);
-        if (!h.device.isEmpty() && h.action != Hotkey::ToggleRemapping)
+        if (!h.device.isEmpty() && h.action != Hotkey::ToggleRemapping && h.action != Hotkey::ToggleGameMode)
             o.insert(QStringLiteral("device"), h.device);
         hotkeyArray.append(o);
     }
@@ -474,7 +486,8 @@ Config::Profile Config::profileFromJson(const QJsonObject &p)
                    bindingsFromJson(p.value(QStringLiteral("bindings")).toObject()),
                    bindingsFromJson(p.value(QStringLiteral("hypershift")).toObject()), programs,
                    sensorFromJson(p.value(QStringLiteral("sensor")).toObject()),
-                   lightingFromJson(p.value(QStringLiteral("lighting")).toObject())};
+                   lightingFromJson(p.value(QStringLiteral("lighting")).toObject()),
+                   gameModeFromJson(p.value(QStringLiteral("gameMode")).toObject())};
 }
 
 QJsonObject Config::profileToJson(const Profile &p)
@@ -488,6 +501,11 @@ QJsonObject Config::profileToJson(const Profile &p)
         o.insert(QStringLiteral("sensor"), sensorToJson(p.sensor));
     if (p.lighting.isValid())
         o.insert(QStringLiteral("lighting"), lightingToJson(p.lighting));
+    if (p.gameMode != GameMode())
+        o.insert(QStringLiteral("gameMode"), QJsonObject{{QStringLiteral("on"), p.gameMode.on},
+                                                         {QStringLiteral("blockSuper"), p.gameMode.blockSuper},
+                                                         {QStringLiteral("blockAltTab"), p.gameMode.blockAltTab},
+                                                         {QStringLiteral("blockAltF4"), p.gameMode.blockAltF4}});
     return o;
 }
 
@@ -570,7 +588,7 @@ bool Config::ensureDevice(const QString &device)
         return false;
     m_deviceOrder << device;
     DeviceSettings &ds = m_devices[device];
-    ds.profiles << Profile{DefaultProfile, {}, {}, {}, {}, {}};
+    ds.profiles << Profile{DefaultProfile, {}, {}, {}, {}, {}, {}};
     ds.active = DefaultProfile;
     return true;
 }
@@ -598,6 +616,7 @@ DeviceProfile Config::device(const QString &device) const
         out.hypershift = p->hypershift;
         out.sensor = p->sensor;
         out.lighting = p->lighting;
+        out.gameMode = p->gameMode;
     }
     return out;
 }
@@ -613,6 +632,7 @@ void Config::setDevice(const QString &device, const DeviceProfile &profile)
             p.hypershift = profile.hypershift;
             p.sensor = profile.sensor;
             p.lighting = profile.lighting;
+            p.gameMode = profile.gameMode;
         }
 }
 
@@ -713,8 +733,9 @@ bool Config::addProfile(const QString &device, const QString &name, const QStrin
     const Profile *active = findProfile(device, activeProfile(device));
     const SensorSettings sensor = source ? source->sensor : active ? active->sensor : SensorSettings();
     const LightingSettings lighting = source ? source->lighting : active ? active->lighting : LightingSettings();
-    m_devices[device].profiles << (source ? Profile{name, source->bindings, source->hypershift, {}, sensor, lighting}
-                                          : Profile{name, {}, {}, {}, sensor, lighting});
+    m_devices[device].profiles << (source ? Profile{name, source->bindings, source->hypershift, {}, sensor, lighting,
+                                                    source->gameMode}
+                                          : Profile{name, {}, {}, {}, sensor, lighting, {}});
     return true;
 }
 

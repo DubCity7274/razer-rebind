@@ -63,6 +63,8 @@ private:
     void importProfile();
     void editPrograms();
     void refreshAutoInfo();
+    void refreshGameMode();
+    void storeGameMode();
     void showHotkeys();
     void showFromBackground();
     void refreshTrayIcon();
@@ -97,6 +99,11 @@ private:
     QPushButton *m_layerHypershift;
     QLabel *m_layerHint;
     QWidget *m_layerRow;      // hidden for lighting-only devices
+    QWidget *m_gameWidget;    // keyboards: game mode and what it blocks
+    QPushButton *m_gameMode;
+    QCheckBox *m_blockSuper;
+    QCheckBox *m_blockAltTab;
+    QCheckBox *m_blockAltF4;
     QWidget *m_bindingArea;   // the bindings list and its buttons, likewise
     QLabel *m_accessoryPage;  // instead of a picture for lighting-only devices
     bool m_hypershiftLayer = false; // editing the Hypershift layer instead of the normal one

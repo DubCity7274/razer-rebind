@@ -62,6 +62,9 @@ signals:
     void dpiTriggered(int action, int clutchDpi, bool pressed);
     // Input arrived after requestActivitySignal(). From the worker thread.
     void activity();
+    // The keyboard's game mode key (Fn+F10, which the driver reports as
+    // KEY_MACRO29) was pressed. From the worker thread.
+    void gameModeKey();
     void failed(const QString &message);
     void disconnected();
 
@@ -117,6 +120,7 @@ private:
     std::mutex m_bindingsMutex;
     BindingMap m_bindings;
     BindingMap m_hypershift;
+    GameMode m_gameMode;
     QList<Hotkey> m_hotkeys;
     QSet<int> m_capabilities; // written before the thread starts
 

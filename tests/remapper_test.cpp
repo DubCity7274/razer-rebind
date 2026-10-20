@@ -647,6 +647,78 @@ int main(int argc, char **argv)
         takeOutput();
     }
 
+    // Fn+F10 (KEY_MACRO29) asks for game mode instead of being typed, unless
+    // it's bound.
+    {
+        std::atomic<int> asked{0};
+        QObject::connect(kbd.remapper, &Remapper::gameModeKey, kbd.remapper, [&] { ++asked; }, Qt::DirectConnection);
+        takeOutput();
+        kbd.key(KEY_MACRO29, 1);
+        kbd.key(KEY_MACRO29, 0);
+        CHECK(asked == 1);
+        CHECK(takeOutput().empty());
+        DeviceProfile bound = kp;
+        bound.bindings.insert(KEY_MACRO29, makeBinding({KEY_F13}));
+        kbd.remapper->setProfile(bound);
+        kbd.key(KEY_MACRO29, 1);
+        kbd.key(KEY_MACRO29, 0);
+        CHECK(asked == 1);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_F13, 1}, {KEY_F13, 0}}));
+        QObject::disconnect(kbd.remapper, &Remapper::gameModeKey, kbd.remapper, nullptr);
+        kbd.remapper->setProfile(kp);
+    }
+
+    // Game mode: Super and the chosen Alt combos are kept from the desktop;
+    // Alt, Tab and F4 alone still work, and a binding on Super still applies.
+    {
+        DeviceProfile gp = kp;
+        gp.gameMode.on = true;
+        gp.gameMode.blockAltTab = true;
+        gp.gameMode.blockAltF4 = true;
+        kbd.remapper->setProfile(gp);
+        takeOutput();
+        kbd.key(KEY_LEFTMETA, 1);
+        kbd.key(KEY_LEFTMETA, 0);
+        kbd.key(KEY_LEFTALT, 1);
+        kbd.key(KEY_TAB, 1);
+        kbd.key(KEY_TAB, 0);
+        kbd.key(KEY_F4, 1);
+        kbd.key(KEY_F4, 0);
+        kbd.key(KEY_LEFTALT, 0);
+        kbd.key(KEY_TAB, 1);
+        kbd.key(KEY_TAB, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_LEFTALT, 1}, {KEY_LEFTALT, 0}, {KEY_TAB, 1}, {KEY_TAB, 0}}));
+
+        gp.bindings.insert(KEY_RIGHTMETA, makeBinding({KEY_F13}));
+        gp.gameMode.blockAltF4 = false;
+        kbd.remapper->setProfile(gp);
+        kbd.key(KEY_RIGHTMETA, 1);
+        kbd.key(KEY_RIGHTMETA, 0);
+        kbd.key(KEY_LEFTALT, 1);
+        kbd.key(KEY_F4, 1);
+        kbd.key(KEY_F4, 0);
+        kbd.key(KEY_LEFTALT, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_F13, 1}, {KEY_F13, 0}, {KEY_LEFTALT, 1}, {KEY_F4, 1}, {KEY_F4, 0},
+                                           {KEY_LEFTALT, 0}}));
+
+        gp.gameMode.on = false;
+        kbd.remapper->setProfile(gp);
+        kbd.key(KEY_LEFTMETA, 1);
+        kbd.key(KEY_LEFTMETA, 0);
+        CHECK((keys(takeOutput()) == Keys2{{KEY_LEFTMETA, 1}, {KEY_LEFTMETA, 0}}));
+
+        Config c;
+        c.load(dir.filePath(QStringLiteral("game.json")), nullptr);
+        c.ensureDevice(QStringLiteral("kbd"));
+        gp.gameMode.on = true;
+        c.setDevice(QStringLiteral("kbd"), gp);
+        CHECK(c.save(nullptr));
+        Config loaded;
+        CHECK(loaded.load(c.path(), nullptr));
+        CHECK(loaded.device(QStringLiteral("kbd")).gameMode == gp.gameMode);
+        kbd.remapper->setProfile(kp);
+    }
+
     // A device that goes away while its Hypershift key is held doesn't leave
     // the other devices stuck in the layer.
     mouse.key(BTN_SIDE, 1);

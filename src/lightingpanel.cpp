@@ -45,6 +45,11 @@ LightingPanel::LightingPanel(Config *config, RemapManager *manager, QWidget *par
     m_paint->setStyleSheet(QStringLiteral(
         "QPushButton:checked { color: white; font-weight: bold; background: palette(highlight);"
         " border: 1px solid palette(highlight); border-radius: 4px; padding: 4px 10px; }"));
+    {
+        QFont bold = m_paint->font();
+        bold.setBold(true);
+        m_paint->setMinimumWidth(QFontMetrics(bold).horizontalAdvance(m_paint->text()) + 28);
+    }
     m_brushButton = new QPushButton(tr("Brush"));
     m_unlitButton = new QPushButton(tr("Unlit keys"));
     m_edgeButton = new QPushButton(tr("Edges"));

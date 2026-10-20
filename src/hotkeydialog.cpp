@@ -72,6 +72,7 @@ HotkeyEditDialog::HotkeyEditDialog(RemapManager *manager, const Config *config, 
     m_action->addItem(tr("Next profile"), Hotkey::NextProfile);
     m_action->addItem(tr("Previous profile"), Hotkey::PreviousProfile);
     m_action->addItem(tr("Turn remapping on/off"), Hotkey::ToggleRemapping);
+    m_action->addItem(tr("Turn game mode on/off"), Hotkey::ToggleGameMode);
     m_device = new QComboBox;
     m_device->addItem(tr("All devices"), QString());
     for (const QString &d : config->deviceKeys())
@@ -168,7 +169,7 @@ Hotkey HotkeyEditDialog::hotkey() const
     h.action = Hotkey::Action(m_action->currentData().toInt());
     if (h.action == Hotkey::SwitchProfile)
         h.profile = m_profile->currentText();
-    if (h.action != Hotkey::ToggleRemapping)
+    if (h.action != Hotkey::ToggleRemapping && h.action != Hotkey::ToggleGameMode)
         h.device = m_device->currentData().toString();
     return h;
 }
@@ -177,7 +178,7 @@ void HotkeyEditDialog::updateState()
 {
     const Hotkey h = hotkey();
     m_profile->setEnabled(h.action == Hotkey::SwitchProfile);
-    m_device->setEnabled(h.action != Hotkey::ToggleRemapping);
+    m_device->setEnabled(h.action != Hotkey::ToggleRemapping && h.action != Hotkey::ToggleGameMode);
     m_preview->setText(QStringLiteral("<b>%1</b> &nbsp;→&nbsp; %2")
                            .arg(h.code > 0 ? h.triggerLabel().toHtmlEscaped() : tr("<i>choose a key</i>"),
                                 h.actionLabel().toHtmlEscaped()));

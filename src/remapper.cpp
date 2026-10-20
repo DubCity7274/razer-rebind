@@ -180,6 +180,7 @@ void Remapper::setProfile(const DeviceProfile &profile)
     std::lock_guard lock(m_bindingsMutex);
     m_bindings = profile.bindings;
     m_hypershift = profile.hypershift;
+    m_gameMode = profile.gameMode;
 }
 
 void Remapper::setHotkeys(const QList<Hotkey> &hotkeys)
@@ -578,6 +579,28 @@ void Remapper::processKey(int code, int value)
         Binding b = lookup(code, &bound, &combo);
         if (!bound)
             b.targets = {code};
+        // Fn+F10: openrazer-daemon toggles game mode on it, but can't see
+        // it while the keyboard is grabbed, so do it here (unless rebound).
+        if (code == KEY_MACRO29 && !bound && m_device.kind == RazerDevice::Keyboard) {
+            m_held.insert(code, {});
+            emit gameModeKey();
+            return;
+        }
+        // Game mode: Super, Alt+Tab and Alt+F4 don't reach the desktop, so a
+        // stray press can't throw you out of the game. Bindings still apply.
+        GameMode game;
+        {
+            std::lock_guard lock(m_bindingsMutex);
+            game = m_gameMode;
+        }
+        if (game.on && !combo) {
+            const bool alt = (heldModifierMask() | outputModifierMask()) & Keys::ModAlt;
+            if ((game.blockSuper && !bound && (code == KEY_LEFTMETA || code == KEY_RIGHTMETA))
+                || (game.blockAltTab && alt && code == KEY_TAB) || (game.blockAltF4 && alt && code == KEY_F4)) {
+                m_held.insert(code, {});
+                return;
+            }
+        }
         if (combo)
             suspendModifiers(combo, code);
         if (b.isDpi()) {

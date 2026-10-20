@@ -6,6 +6,9 @@
 #include "sensor.h"
 
 #include <QDBusConnection>
+#include <QDateTime>
+#include <QDBusMessage>
+#include <QFile>
 #include <QDir>
 #include <QLocalServer>
 #include <QStandardPaths>
@@ -20,6 +23,9 @@ RemapManager::RemapManager(Config *config, QObject *parent)
     , m_config(config)
 {
     m_sensorQueue.setMaxThreadCount(1);
+    m_gameLedWatch.setInterval(1000);
+    connect(&m_gameLedWatch, &QTimer::timeout, this, &RemapManager::checkGameLeds);
+    m_gameLedWatch.start();
     // Event nodes come and go when devices are plugged in, the wireless mouse
     // reconnects, or the OpenRazer modules are reloaded. udev needs a moment
     // to set permissions on new nodes, hence the delay.
@@ -96,6 +102,10 @@ QString RemapManager::resolveDevice(const QString &query, QString *error) const
 QString RemapManager::perform(Hotkey::Action action, const QString &profile, const QString &device,
                               bool notifyUser)
 {
+    if (action == Hotkey::ToggleGameMode) {
+        toggleGameMode(notifyUser);
+        return tr("Game mode toggled");
+    }
     if (action == Hotkey::ToggleRemapping) {
         setRemappingEnabled(!remappingEnabled());
         const QString state = remappingEnabled() ? tr("Remapping on") : tr("Remapping off");
@@ -285,6 +295,8 @@ void RemapManager::rescan()
         it = byPath.contains(it.key()) ? std::next(it) : m_appliedSensor.erase(it);
     for (auto it = m_appliedLighting.begin(); it != m_appliedLighting.end();)
         it = byPath.contains(it.key()) ? std::next(it) : m_appliedLighting.erase(it);
+    for (auto it = m_appliedGameLed.begin(); it != m_appliedGameLed.end();)
+        it = byPath.contains(it.key()) ? std::next(it) : m_appliedGameLed.erase(it);
 
     m_devices = found;
     applyProfile();
@@ -316,6 +328,7 @@ void RemapManager::addRemapper(const RazerDevice &dev)
     });
     connect(r, &Remapper::commandTriggered, this, &RemapManager::runCommand);
     connect(r, &Remapper::activity, this, &RemapManager::activity);
+    connect(r, &Remapper::gameModeKey, this, [this] { toggleGameMode(m_config->notifications); });
     connect(r, &Remapper::dpiTriggered, this, [this, dev](int action, int clutchDpi, bool pressed) {
         handleDpi(dev, action, clutchDpi, pressed);
     });
@@ -338,7 +351,8 @@ void RemapManager::applyProfile()
         // do with it: a binding (in either layer), or a hotkey it can trigger.
         const bool hotkeyHere = std::any_of(m_config->hotkeys.cbegin(), m_config->hotkeys.cend(),
                                             [r](const Hotkey &h) { return r->canProduce(h.code); });
-        r->setActive(m_config->remappingEnabled && p.enabled && (!p.bindings.isEmpty() || !p.hypershift.isEmpty() || hotkeyHere));
+        r->setActive(m_config->remappingEnabled && p.enabled && (!p.bindings.isEmpty() || !p.hypershift.isEmpty() || hotkeyHere
+                                                                      || p.gameMode.on));
     }
 
     // DPI and polling rate go to the mouse over USB, so only when they change:
@@ -352,6 +366,30 @@ void RemapManager::applyProfile()
             emit message(tr("Could not set the DPI of the %1: %2").arg(d.profileKey, error));
         m_appliedSensor.insert(d.hidPath, wanted);
     }
+    // The game mode LED, on keyboards that have one.
+    for (const RazerDevice &d : std::as_const(m_devices)) {
+        if (d.kind != RazerDevice::Keyboard || !QFile::exists(d.hidPath + QStringLiteral("/game_led_state")))
+            continue;
+        const bool on = m_config->device(d.profileKey).gameMode.on;
+        if (m_appliedGameLed.contains(d.hidPath) && m_appliedGameLed.value(d.hidPath) == on)
+            continue;
+        m_appliedGameLed.insert(d.hidPath, on);
+        m_gameLedSetAt.insert(d.hidPath, QDateTime::currentMSecsSinceEpoch());
+        m_sensorQueue.start([d, on] {
+            // Through the daemon when it knows the keyboard, so it agrees.
+            const QString serial = d.attribute("device_serial");
+            QDBusMessage call = QDBusMessage::createMethodCall(
+                QStringLiteral("org.razer"), QStringLiteral("/org/razer/device/") + serial,
+                QStringLiteral("razer.device.led.gamemode"), QStringLiteral("setGameMode"));
+            call << on;
+            if (serial.isEmpty() || QDBusConnection::sessionBus().call(call, QDBus::Block, 2000).type() != QDBusMessage::ReplyMessage) {
+                QFile f(d.hidPath + QStringLiteral("/game_led_state"));
+                if (f.open(QIODevice::WriteOnly))
+                    f.write(on ? "1" : "0");
+            }
+        });
+    }
+
     // Lighting likewise.
     for (const RazerDevice &d : std::as_const(m_devices)) {
         const LightingSettings wanted = m_config->device(d.profileKey).lighting;
@@ -368,6 +406,73 @@ void RemapManager::applyProfile()
 void RemapManager::markSensorApplied(const QString &hidPath, const SensorSettings &settings)
 {
     m_appliedSensor.insert(hidPath, settings);
+}
+
+void RemapManager::setGameMode(bool on, bool notifyUser)
+{
+    QStringList changed;
+    for (const QString &key : m_config->deviceKeys()) {
+        const bool keyboard = std::any_of(m_devices.cbegin(), m_devices.cend(), [&](const RazerDevice &d) {
+            return d.profileKey == key && d.kind == RazerDevice::Keyboard;
+        });
+        DeviceProfile p = m_config->device(key);
+        if (!keyboard || p.gameMode.on == on)
+            continue;
+        p.gameMode.on = on;
+        m_config->setDevice(key, p);
+        changed << shortDeviceName(key);
+    }
+    if (changed.isEmpty())
+        return;
+    m_config->save(nullptr);
+    applyProfile();
+    emit profileChanged();
+    const QString text = on ? tr("Game mode on") : tr("Game mode off");
+    emit message(text);
+    if (notifyUser)
+        notify(text, on ? tr("Super is blocked until you turn it off or switch profile") : QString());
+}
+
+void RemapManager::toggleGameMode(bool notifyUser)
+{
+    bool anyOn = false;
+    for (const RazerDevice &d : std::as_const(m_devices))
+        if (d.kind == RazerDevice::Keyboard)
+            anyOn |= m_config->device(d.profileKey).gameMode.on;
+    setGameMode(!anyOn, notifyUser);
+}
+
+void RemapManager::checkGameLeds()
+{
+    // Fn+F10 switches the keyboard's game mode in its firmware without
+    // sending a key; seeing the LED change is how to notice.
+    for (const RazerDevice &d : std::as_const(m_devices)) {
+        if (d.kind != RazerDevice::Keyboard || !m_appliedGameLed.contains(d.hidPath))
+            continue;
+        // Our own change may not have reached the keyboard yet.
+        if (QDateTime::currentMSecsSinceEpoch() - m_gameLedSetAt.value(d.hidPath) < 2000)
+            continue;
+        QFile f(d.hidPath + QStringLiteral("/game_led_state"));
+        if (!f.open(QIODevice::ReadOnly))
+            continue;
+        const bool lit = f.readAll().trimmed() == "1";
+        if (lit == m_appliedGameLed.value(d.hidPath))
+            continue;
+        m_appliedGameLed.insert(d.hidPath, lit);
+        m_gameLedSetAt.insert(d.hidPath, QDateTime::currentMSecsSinceEpoch());
+        DeviceProfile p = m_config->device(d.profileKey);
+        if (p.gameMode.on == lit)
+            continue;
+        p.gameMode.on = lit;
+        m_config->setDevice(d.profileKey, p);
+        m_config->save(nullptr);
+        applyProfile();
+        emit profileChanged();
+        const QString text = lit ? tr("Game mode on (Fn+F10)") : tr("Game mode off (Fn+F10)");
+        emit message(text);
+        if (m_config->notifications)
+            notify(text, lit ? tr("Super is blocked until you turn it off or switch profile") : QString());
+    }
 }
 
 void RemapManager::setLightsOff(bool off)

@@ -342,6 +342,18 @@ changes it; the first time you change it, your other profiles keep the
 current lighting. With openrazer-daemon running, lighting goes through it
 and is restored when the device reconnects.
 
+### Game mode
+
+On a keyboard, **Game mode** (next to the layer switch) keeps the keys ticked
+beside it from doing their usual thing: **Super**, so the launcher doesn't
+pop up mid-game, and optionally **Alt+Tab** and **Alt+F4**. Alt, Tab and F4 on
+their own still work, and a binding of your own on Super still applies. The
+keyboard's game mode LED lights while it's on. On keyboards with a game mode
+key (Fn+F10 on the Huntsman Elite) that key turns it on and off too, and a
+hotkey can (**Hotkeys…** → **Turn game mode on/off**). Game mode is saved with
+the profile, so give your game's profile game mode and link the game to it
+(**Programs…**) to have it on exactly while you play.
+
 ### Switching profiles automatically
 
 A profile can switch on by itself while a game (or any program) runs:
@@ -367,7 +379,8 @@ in any application, including full-screen games. A hotkey can:
 
 - switch to a specific profile,
 - go to the next or previous profile,
-- turn remapping on or off.
+- turn remapping on or off,
+- turn game mode on or off.
 
 Each hotkey applies to one device or to all devices. For example:
 

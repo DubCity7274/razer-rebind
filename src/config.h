@@ -11,6 +11,22 @@
 #include <QString>
 #include <QStringList>
 
+// Keyboard game mode: keys to keep from doing their usual thing while
+// playing, and the keyboard's game mode LED on.
+struct GameMode
+{
+    bool on = false;
+    bool blockSuper = true;
+    bool blockAltTab = false;
+    bool blockAltF4 = false;
+
+    bool operator==(const GameMode &o) const
+    {
+        return on == o.on && blockSuper == o.blockSuper && blockAltTab == o.blockAltTab && blockAltF4 == o.blockAltF4;
+    }
+    bool operator!=(const GameMode &o) const { return !(*this == o); }
+};
+
 // What a remapper needs for one device: whether to remap it at all, and the
 // bindings of its active profile.
 struct DeviceProfile
@@ -24,6 +40,7 @@ struct DeviceProfile
     SensorSettings sensor;
     // Lighting effect; not valid = leave the lighting alone.
     LightingSettings lighting;
+    GameMode gameMode;
 
     bool hasHypershiftKey() const;
 };
@@ -32,7 +49,7 @@ struct DeviceProfile
 // (X11 or Wayland) without registering anything with the compositor.
 struct Hotkey
 {
-    enum Action { SwitchProfile, NextProfile, PreviousProfile, ToggleRemapping };
+    enum Action { SwitchProfile, NextProfile, PreviousProfile, ToggleRemapping, ToggleGameMode };
 
     unsigned modifiers = 0; // Keys::Modifier bits
     int code = 0;           // key, mouse button or wheel pseudo code
@@ -135,6 +152,7 @@ private:
         QStringList programs;
         SensorSettings sensor;
         LightingSettings lighting;
+        GameMode gameMode;
     };
     struct DeviceSettings
     {

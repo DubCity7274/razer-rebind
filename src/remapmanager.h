@@ -61,6 +61,10 @@ public:
     // Lights out (idle, screen locked): every device's lighting off, and
     // profile switches don't light it up again until switched back on, which
     // restores what each device had.
+    // Game mode of every keyboard's active profile; `toggle` flips it.
+    void setGameMode(bool on, bool notifyUser);
+    void toggleGameMode(bool notifyUser);
+
     void setLightsOff(bool off);
     bool lightsOff() const { return m_lightsOff; }
 
@@ -95,6 +99,10 @@ private:
     QHash<QString, QString> m_errors;       // by hidPath
     QHash<QString, SensorSettings> m_appliedSensor; // by hidPath: last DPI / poll rate written
     QHash<QString, LightingSettings> m_appliedLighting; // by hidPath: last lighting written
+    QHash<QString, bool> m_appliedGameLed;              // by hidPath: game mode LED last set
+    QHash<QString, qint64> m_gameLedSetAt;              // by hidPath: when (ms since epoch), to tell Fn+F10 apart
+    QTimer m_gameLedWatch;                              // Fn+F10 flips the LED in firmware: follow it
+    void checkGameLeds();
     // DPI changes take ~60 ms each over USB; they run here, one at a time
     // and in order, so they never hold up input or the window.
     QThreadPool m_sensorQueue;
