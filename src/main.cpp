@@ -1,5 +1,6 @@
 #include "autoswitcher.h"
 #include "batterymonitor.h"
+#include "idlelights.h"
 #include "config.h"
 #include "mainwindow.h"
 #include "remapmanager.h"
@@ -176,6 +177,7 @@ int main(int argc, char *argv[])
     manager.listen();
     BatteryMonitor battery(&manager, &config);
     AutoSwitcher autoSwitcher(&manager, &config);
+    IdleLights idleLights(&manager, &config);
 
     if (!gui) {
         QObject::connect(&manager, &RemapManager::devicesChanged, [&manager, &err] {

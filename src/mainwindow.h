@@ -96,6 +96,9 @@ private:
     QPushButton *m_layerNormal;
     QPushButton *m_layerHypershift;
     QLabel *m_layerHint;
+    QWidget *m_layerRow;      // hidden for lighting-only devices
+    QWidget *m_bindingArea;   // the bindings list and its buttons, likewise
+    QLabel *m_accessoryPage;  // instead of a picture for lighting-only devices
     bool m_hypershiftLayer = false; // editing the Hypershift layer instead of the normal one
     QAction *m_toggleAction;
     QComboBox *m_profileCombo;

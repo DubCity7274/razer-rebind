@@ -109,7 +109,12 @@ bool Lighting::daemonAvailable() const
     if (m_daemonPath.isEmpty())
         return false;
     QDBusConnectionInterface *bus = QDBusConnection::sessionBus().interface();
-    return bus && bus->isServiceRegistered(Service);
+    if (!bus || !bus->isServiceRegistered(Service))
+        return false;
+    // The daemon can lose a device (a wireless mouse asleep when it started
+    // shows up as "UNKNOWN_..."); then the driver is the way to reach it.
+    return call(m_daemonPath, QStringLiteral("razer.device.misc"), QStringLiteral("getDeviceName")).type()
+           == QDBusMessage::ReplyMessage;
 }
 
 QList<LightingSettings::Effect> Lighting::effects() const
@@ -127,7 +132,7 @@ QList<LightingSettings::Effect> Lighting::effects() const
     if (hasAttr("matrix_effect_starlight")) out << L::Starlight;
     // Ripple is drawn by the daemon frame by frame, on keyboards with a
     // per-key matrix.
-    if (!m_logo && hasAttr("matrix_custom_frame") && daemonAvailable())
+    if (m_device.kind == RazerDevice::Keyboard && hasAttr("matrix_custom_frame") && daemonAvailable())
         out << L::Ripple;
     if (!m_logo && hasAttr("matrix_custom_frame") && !ledMap(m_device).isEmpty())
         out << L::Custom;
@@ -152,7 +157,7 @@ bool Lighting::read(LightingSettings *out, QString *error) const
     // Only the daemon knows the current effect; the driver can't be asked.
     if (!daemonAvailable()) {
         if (error)
-            *error = QStringLiteral("openrazer-daemon isn't running");
+            *error = QStringLiteral("openrazer-daemon isn't running or doesn't know this device");
         return false;
     }
     const QString chroma = m_logo ? QStringLiteral("razer.device.lighting.logo") : QStringLiteral("razer.device.lighting.chroma");

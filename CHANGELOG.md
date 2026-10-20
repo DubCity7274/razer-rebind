@@ -16,6 +16,13 @@
 - **Sensitivity clutch and DPI bindings.** A key or button can lower the
   mouse's DPI while held (a sensitivity clutch for aiming), or step to the
   next, previous or following DPI stage, with a notification of the new DPI.
+- **Lights off when idle or locked.** Lighting turns off after 15 minutes
+  without input from your Razer devices, and while the screen is locked, and
+  comes back with the next input or the unlock. Both can be changed or
+  turned off in Settings.
+- **Accessories.** Mouse docks, headsets and other OpenRazer accessories
+  appear in the device list with their lighting and profiles, so their
+  lights follow your profiles and go off when idle too.
 - **Per-profile lighting.** Lighting is saved with the profile like DPI, so
   switching profiles or starting a linked game changes it too.
 

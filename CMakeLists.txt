@@ -25,6 +25,7 @@ qt_add_executable(razer-rebind
     src/batterymonitor.cpp src/batterymonitor.h
     src/processes.cpp src/processes.h
     src/autoswitcher.cpp src/autoswitcher.h
+    src/idlelights.cpp src/idlelights.h
     src/settingsdialog.cpp src/settingsdialog.h
     src/inputdetector.cpp src/inputdetector.h
     src/hotkeydialog.cpp src/hotkeydialog.h

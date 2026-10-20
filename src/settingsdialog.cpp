@@ -91,12 +91,51 @@ SettingsDialog::SettingsDialog(Config *config, BatteryMonitor *battery, QWidget 
     auto *batteryBox = new QGroupBox(tr("Battery"));
     batteryBox->setLayout(batteryLayout);
 
+    // Lighting
+    auto *idle = new QCheckBox(tr("Turn the lighting off after"));
+    idle->setChecked(config->lightsOffIdle);
+    auto *idleMinutes = new QSpinBox;
+    idleMinutes->setRange(1, 240);
+    idleMinutes->setValue(config->lightsOffIdleMinutes);
+    idleMinutes->setSuffix(tr(" min without input"));
+    idleMinutes->setEnabled(config->lightsOffIdle);
+    auto *idleRow = new QHBoxLayout;
+    idleRow->addWidget(idle);
+    idleRow->addWidget(idleMinutes);
+    idleRow->addStretch();
+    auto *locked = new QCheckBox(tr("Turn the lighting off while the screen is locked"));
+    locked->setChecked(config->lightsOffLocked);
+    auto *lightNote = new QLabel(tr("Input means keys, buttons or movement on your Razer devices; the next one "
+                                    "turns the lighting back on."));
+    lightNote->setWordWrap(true);
+    lightNote->setStyleSheet(QStringLiteral("color: palette(placeholder-text);"));
+    connect(idle, &QCheckBox::toggled, this, [this, idleMinutes](bool on) {
+        idleMinutes->setEnabled(on);
+        m_config->lightsOffIdle = on;
+        save();
+    });
+    connect(idleMinutes, &QSpinBox::valueChanged, this, [this](int value) {
+        m_config->lightsOffIdleMinutes = value;
+        save();
+    });
+    connect(locked, &QCheckBox::toggled, this, [this](bool on) {
+        m_config->lightsOffLocked = on;
+        save();
+    });
+    auto *lightLayout = new QVBoxLayout;
+    lightLayout->addLayout(idleRow);
+    lightLayout->addWidget(locked);
+    lightLayout->addWidget(lightNote);
+    auto *lightBox = new QGroupBox(tr("Lighting"));
+    lightBox->setLayout(lightLayout);
+
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::accept);
 
     auto *layout = new QVBoxLayout(this);
     layout->addWidget(profileBox);
     layout->addWidget(batteryBox);
+    layout->addWidget(lightBox);
     layout->addStretch();
     layout->addWidget(buttons);
     resize(520, sizeHint().height());

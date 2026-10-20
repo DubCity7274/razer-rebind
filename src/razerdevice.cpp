@@ -51,6 +51,8 @@ QList<RazerDevice> discoverRazerDevices()
     const struct { const char *driver; RazerDevice::Kind kind; } drivers[] = {
         {"razerkbd", RazerDevice::Keyboard},
         {"razermouse", RazerDevice::Mouse},
+        {"razeraccessory", RazerDevice::Accessory},
+        {"razerkraken", RazerDevice::Accessory},
     };
 
     QList<RazerDevice> result;
@@ -91,8 +93,12 @@ QList<RazerDevice> discoverRazerDevices()
                 if (sibling.usbDevice == main.usbDevice && sibling.vidPid == main.vidPid)
                     dev.eventNodes << eventNodesOf(sibling.realPath);
             dev.eventNodes.sort();
+            // Accessories are only lit, never grabbed (a headset's volume
+            // keys stay the system's).
+            if (dev.kind == RazerDevice::Accessory)
+                dev.eventNodes.clear();
 
-            if (!dev.eventNodes.isEmpty())
+            if (!dev.eventNodes.isEmpty() || dev.kind == RazerDevice::Accessory)
                 result << dev;
         }
     }

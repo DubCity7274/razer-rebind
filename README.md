@@ -67,6 +67,11 @@ selected. Click one to rebind it, or use **Add binding…** and **Detect**.
 DPI and polling rate settings appear for any mouse whose driver supports
 them.
 
+Docks, headsets and other accessories driven by OpenRazer (`razeraccessory`,
+`razerkraken`) show up as **lighting only**: they have no keys to rebind, but
+their lighting is set, saved per profile and turned off when idle like the
+rest.
+
 ## Requirements
 
 - Linux with the **OpenRazer kernel modules** loaded (`razerkbd`,
@@ -323,6 +328,13 @@ open bindings; turn **Paint keys** off to edit bindings again. The picture
 shows each key's colour as a strip on the keycap, and the light strips in
 their colours, for Custom and Static. Per-key lighting needs a map of where each key's LED sits,
 which only the Huntsman Elite has so far.
+
+The lighting turns off by itself after 15 minutes without input from your
+Razer devices (keys, buttons or mouse movement), and while the screen is
+locked; the next input, or unlocking, brings it back as it was, painted keys
+included. **Settings** changes the time or turns either off. Only Razer
+devices count as input, so a long video or a game played with a controller
+also lets the lights go out.
 
 Each device only lists the effects it supports. Like DPI, lighting is saved
 with the active profile, so switching profiles or starting a linked game

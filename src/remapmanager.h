@@ -58,6 +58,12 @@ public:
     void markSensorApplied(const QString &hidPath, const SensorSettings &settings);
     void markLightingApplied(const QString &hidPath, const LightingSettings &settings);
 
+    // Lights out (idle, screen locked): every device's lighting off, and
+    // profile switches don't light it up again until switched back on, which
+    // restores what each device had.
+    void setLightsOff(bool off);
+    bool lightsOff() const { return m_lightsOff; }
+
     // Accept commands from `razer-rebind --profile ...` and friends.
     bool listen();
     static QString serverName();
@@ -72,6 +78,8 @@ signals:
     void showRequested();
     void inputEvent(const QString &profileKey, int code, bool pressed);
     void message(const QString &text);
+    // Input on a Razer device after Remapper::requestActivitySignal().
+    void activity();
 
 private slots:
     void onNotificationClosed(uint id, uint reason);
@@ -91,6 +99,10 @@ private:
     // and in order, so they never hold up input or the window.
     QThreadPool m_sensorQueue;
     QHash<QString, std::shared_ptr<std::atomic<int>>> m_clutchRestore; // by hidPath: DPI to go back to
+    bool m_lightsOff = false;
+    // By hidPath: what a device without profile lighting had before lights
+    // out; filled and used by tasks on m_sensorQueue, which run in order.
+    QHash<QString, std::shared_ptr<LightingSettings>> m_lightsBefore;
     QFileSystemWatcher m_watcher;
     QTimer m_rescanTimer;
     int m_retries = 0;

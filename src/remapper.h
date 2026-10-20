@@ -32,6 +32,11 @@ public:
 
     const RazerDevice &device() const { return m_device; }
 
+    // When any Razer device last sent input (keys, buttons, movement), in
+    // monotonic ns, and a one-shot activity() on the next input from any.
+    static qint64 lastActivityNs();
+    static void requestActivitySignal();
+
     bool start(QString *error);
     void stop();
 
@@ -55,6 +60,8 @@ signals:
     // A DPI binding (Binding::DpiAction) was pressed or, for the clutch,
     // released. From the worker thread.
     void dpiTriggered(int action, int clutchDpi, bool pressed);
+    // Input arrived after requestActivitySignal(). From the worker thread.
+    void activity();
     void failed(const QString &message);
     void disconnected();
 

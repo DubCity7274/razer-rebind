@@ -628,6 +628,25 @@ int main(int argc, char **argv)
         kbd.remapper->setProfile(kp);
     }
 
+    // Activity: any input moves the last-activity time; after a request, the
+    // next input signals once.
+    {
+        std::atomic<int> woke{0};
+        QObject::connect(kbd.remapper, &Remapper::activity, kbd.remapper, [&] { ++woke; }, Qt::DirectConnection);
+        const qint64 before = Remapper::lastActivityNs();
+        settle(20);
+        kbd.key(KEY_Z, 1);
+        kbd.key(KEY_Z, 0);
+        CHECK(Remapper::lastActivityNs() > before);
+        CHECK(woke == 0);
+        Remapper::requestActivitySignal();
+        kbd.key(KEY_Z, 1);
+        kbd.key(KEY_Z, 0);
+        CHECK(woke == 1);
+        QObject::disconnect(kbd.remapper, &Remapper::activity, kbd.remapper, nullptr);
+        takeOutput();
+    }
+
     // A device that goes away while its Hypershift key is held doesn't leave
     // the other devices stuck in the layer.
     mouse.key(BTN_SIDE, 1);

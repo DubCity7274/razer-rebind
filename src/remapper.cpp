@@ -59,6 +59,9 @@ qint64 monotonicNs()
     return qint64(ts.tv_sec) * 1000000000 + ts.tv_nsec;
 }
 
+std::atomic<qint64> g_lastActivity{monotonicNs()};
+std::atomic<bool> g_wantActivity{false};
+
 // Under heavy CPU load (a game, shader compilation) an ordinary thread can wait
 // a millisecond or more for its turn, delaying input. Ask for a modest
 // real-time priority like PipeWire does for audio: directly if the user is
@@ -83,6 +86,16 @@ QString raiseThreadPriority()
 }
 
 } // namespace
+
+qint64 Remapper::lastActivityNs()
+{
+    return g_lastActivity.load();
+}
+
+void Remapper::requestActivitySignal()
+{
+    g_wantActivity = true;
+}
 
 Remapper::Remapper(RazerDevice device, QObject *parent)
     : QObject(parent)
@@ -468,6 +481,11 @@ void Remapper::resumeModifiers()
 
 void Remapper::handleEvent(const input_event &ev)
 {
+    if (ev.type != EV_SYN && ev.type != EV_MSC) {
+        g_lastActivity.store(monotonicNs(), std::memory_order_relaxed);
+        if (g_wantActivity.load(std::memory_order_relaxed) && g_wantActivity.exchange(false))
+            emit activity();
+    }
     switch (ev.type) {
     case EV_KEY: {
         if (ev.value != 2) {

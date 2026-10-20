@@ -8,7 +8,9 @@
 // (razerkbd / razermouse). Found through the driver's sysfs tree.
 struct RazerDevice
 {
-    enum Kind { Keyboard, Mouse };
+    // Accessory: a dock, headset or the like, with lighting but no keys to
+    // rebind (razeraccessory, razerkraken).
+    enum Kind { Keyboard, Mouse, Accessory };
 
     Kind kind = Keyboard;
     QString name;        // OpenRazer device_type, e.g. "Razer Viper Ultimate (Wireless)"

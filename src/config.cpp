@@ -305,6 +305,10 @@ bool Config::load(const QString &path, QString *error)
     batteryThreshold = std::clamp(battery.value(QStringLiteral("threshold")).toInt(20), 1, 99);
     trayBattery = battery.value(QStringLiteral("tray")).toBool(true);
     autoSwitch = root.value(QStringLiteral("autoSwitch")).toBool(true);
+    const QJsonObject lightsOff = root.value(QStringLiteral("lightsOff")).toObject();
+    lightsOffIdle = lightsOff.value(QStringLiteral("idle")).toBool(true);
+    lightsOffIdleMinutes = std::clamp(lightsOff.value(QStringLiteral("minutes")).toInt(15), 1, 240);
+    lightsOffLocked = lightsOff.value(QStringLiteral("locked")).toBool(true);
 
     auto addDevice = [this](const QString &key) -> DeviceSettings & {
         if (!m_devices.contains(key))
@@ -434,6 +438,9 @@ bool Config::save(QString *error) const
         {QStringLiteral("remappingEnabled"), remappingEnabled},
         {QStringLiteral("notifications"), notifications},
         {QStringLiteral("autoSwitch"), autoSwitch},
+        {QStringLiteral("lightsOff"), QJsonObject{{QStringLiteral("idle"), lightsOffIdle},
+                                                  {QStringLiteral("minutes"), lightsOffIdleMinutes},
+                                                  {QStringLiteral("locked"), lightsOffLocked}}},
         {QStringLiteral("battery"), QJsonObject{{QStringLiteral("alerts"), batteryAlerts},
                                                 {QStringLiteral("threshold"), batteryThreshold},
                                                 {QStringLiteral("tray"), trayBattery}}},

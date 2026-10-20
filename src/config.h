@@ -69,6 +69,9 @@ public:
     int batteryThreshold = 20;   // percent
     bool trayBattery = true;     // battery gauge on the tray icon
     bool autoSwitch = true;      // switch profiles when their programs run
+    bool lightsOffIdle = true;   // lighting off after a while without input
+    int lightsOffIdleMinutes = 15;
+    bool lightsOffLocked = true; // lighting off while the screen is locked
     QList<Hotkey> hotkeys;
 
     // Devices that have settings, in a stable order. ensureDevice() adds one

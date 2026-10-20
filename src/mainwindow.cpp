@@ -207,7 +207,9 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
     m_layerHint = new QLabel;
     m_layerHint->setWordWrap(true);
     m_layerHint->setStyleSheet(QStringLiteral("color: palette(placeholder-text);"));
-    auto *layerRow = new QHBoxLayout;
+    m_layerRow = new QWidget;
+    auto *layerRow = new QHBoxLayout(m_layerRow);
+    layerRow->setContentsMargins(0, 0, 0, 0);
     layerRow->setSpacing(0);
     layerRow->addWidget(new QLabel(tr("Layer:")));
     layerRow->addSpacing(8);
@@ -215,7 +217,7 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
     layerRow->addWidget(m_layerHypershift);
     layerRow->addSpacing(12);
     layerRow->addWidget(m_layerHint, 1);
-    header->addLayout(layerRow, 3, 0, 1, 2);
+    header->addWidget(m_layerRow, 3, 0, 1, 2);
 
     m_keyboardView = new KeyboardView;
     m_mouseView = new MouseView;
@@ -229,6 +231,11 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
     m_views->addWidget(m_keyboardView);
     m_views->addWidget(m_mouseView);
     m_views->addWidget(m_genericView);
+    m_accessoryPage = new QLabel;
+    m_accessoryPage->setAlignment(Qt::AlignCenter);
+    m_accessoryPage->setWordWrap(true);
+    m_accessoryPage->setStyleSheet(QStringLiteral("color: palette(placeholder-text);"));
+    m_views->addWidget(m_accessoryPage);
 
     m_table = new QTableWidget(0, 2);
     m_table->setHorizontalHeaderLabels({tr("Input"), tr("Output")});
@@ -248,7 +255,9 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
         buttonRow->addWidget(b);
     buttonRow->addStretch();
 
-    auto *bindingRow = new QHBoxLayout;
+    m_bindingArea = new QWidget;
+    auto *bindingRow = new QHBoxLayout(m_bindingArea);
+    bindingRow->setContentsMargins(0, 0, 0, 0);
     bindingRow->addWidget(m_table, 1);
     bindingRow->addLayout(buttonRow);
 
@@ -261,7 +270,8 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
     bindingLayout->setContentsMargins(0, 0, 0, 0);
     bindingLayout->addWidget(m_sensor);
     bindingLayout->addWidget(m_lighting);
-    bindingLayout->addLayout(bindingRow);
+    bindingLayout->addWidget(m_bindingArea);
+    bindingLayout->addStretch();
     rightSplit->addWidget(bindingPane);
     rightSplit->setStretchFactor(0, 1);
     rightSplit->setStretchFactor(1, 0);
@@ -510,7 +520,11 @@ void MainWindow::rebuildDeviceList()
     for (int i = 0; i < devices.size(); ++i) {
         const RazerDevice &d = devices[i];
         auto *item = new QListWidgetItem(
-            QIcon::fromTheme(d.kind == RazerDevice::Mouse ? QStringLiteral("input-mouse") : QStringLiteral("input-keyboard")),
+            QIcon::fromTheme(d.kind == RazerDevice::Mouse      ? QStringLiteral("input-mouse")
+                             : d.kind == RazerDevice::Keyboard ? QStringLiteral("input-keyboard")
+                             : d.name.contains(QLatin1String("Kraken")) || d.name.contains(QLatin1String("Barracuda"))
+                                 ? QStringLiteral("audio-headset")
+                                 : QStringLiteral("preferences-desktop-peripherals")),
             d.name);
         item->setData(Qt::UserRole, d.hidPath);
         item->setSizeHint(QSize(0, 48));
@@ -563,12 +577,22 @@ void MainWindow::selectDevice()
             parts << tr("serial %1").arg(serial);
         if (!firmware.isEmpty())
             parts << tr("firmware %1").arg(firmware);
-        parts << dev->eventNodes.join(QStringLiteral(", "));
+        if (!dev->eventNodes.isEmpty())
+            parts << dev->eventNodes.join(QStringLiteral(", "));
         m_detailsCache.insert(dev->hidPath, parts.join(QStringLiteral("  ·  ")));
     }
     refreshDetails();
     m_genericView->setDevice(*dev);
-    m_views->setCurrentWidget(currentView());
+    // Docks and headsets have lighting (and profiles for it) but nothing to
+    // rebind.
+    const bool accessory = dev->kind == RazerDevice::Accessory;
+    m_accessoryPage->setText(tr("The %1 has no keys or buttons to rebind.\n\nIts lighting is below, saved with "
+                                "its profile like the others, and goes off with them when you're idle.")
+                                 .arg(dev->profileKey));
+    m_views->setCurrentWidget(accessory ? static_cast<QWidget *>(m_accessoryPage) : currentView());
+    m_layerRow->setVisible(!accessory);
+    m_bindingArea->setVisible(!accessory);
+    m_deviceEnabled->setVisible(!accessory);
     {
         QSignalBlocker b(m_deviceEnabled);
         m_deviceEnabled->setEnabled(true);
@@ -620,7 +644,9 @@ void MainWindow::refreshState()
             continue;
         Remapper *r = m_manager->remapper(path);
         QString status;
-        if (!m_manager->errorFor(path).isEmpty() || !r)
+        if (dev->kind == RazerDevice::Accessory)
+            status = tr("lighting");
+        else if (!m_manager->errorFor(path).isEmpty() || !r)
             status = tr("⚠ error");
         else if (r->isGrabbed())
             status = tr("● remapping");
@@ -642,7 +668,9 @@ void MainWindow::refreshState()
     const QString error = m_manager->errorFor(dev->hidPath);
     const DeviceProfile p = m_config->device(dev->profileKey);
     QString html;
-    if (!error.isEmpty() || !r) {
+    if (dev->kind == RazerDevice::Accessory) {
+        html = tr("Lighting only.");
+    } else if (!error.isEmpty() || !r) {
         html = QStringLiteral("<span style='color:#d33'>⚠ %1</span> — <a href='#'>%2</a>")
                    .arg(error.toHtmlEscaped(), tr("how to fix permissions"));
     } else if (r->isGrabbed()) {

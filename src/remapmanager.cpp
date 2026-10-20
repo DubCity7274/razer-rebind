@@ -273,7 +273,7 @@ void RemapManager::rescan()
     bool newDevice = false;
     for (const RazerDevice &d : found) {
         newDevice |= m_config->ensureDevice(d.profileKey);
-        if (!m_remappers.contains(d.hidPath))
+        if (!m_remappers.contains(d.hidPath) && d.kind != RazerDevice::Accessory)
             addRemapper(d);
     }
     if (newDevice)
@@ -315,6 +315,7 @@ void RemapManager::addRemapper(const RazerDevice &dev)
         perform(Hotkey::Action(action), profile, device, m_config->notifications);
     });
     connect(r, &Remapper::commandTriggered, this, &RemapManager::runCommand);
+    connect(r, &Remapper::activity, this, &RemapManager::activity);
     connect(r, &Remapper::dpiTriggered, this, [this, dev](int action, int clutchDpi, bool pressed) {
         handleDpi(dev, action, clutchDpi, pressed);
     });
@@ -354,7 +355,7 @@ void RemapManager::applyProfile()
     // Lighting likewise.
     for (const RazerDevice &d : std::as_const(m_devices)) {
         const LightingSettings wanted = m_config->device(d.profileKey).lighting;
-        if (!wanted.isValid() || m_appliedLighting.value(d.hidPath) == wanted)
+        if (m_lightsOff || !wanted.isValid() || m_appliedLighting.value(d.hidPath) == wanted)
             continue;
         QString error;
         if (!Lighting(d).write(wanted, &error))
@@ -367,6 +368,47 @@ void RemapManager::applyProfile()
 void RemapManager::markSensorApplied(const QString &hidPath, const SensorSettings &settings)
 {
     m_appliedSensor.insert(hidPath, settings);
+}
+
+void RemapManager::setLightsOff(bool off)
+{
+    if (off == m_lightsOff)
+        return;
+    m_lightsOff = off;
+    for (const RazerDevice &d : std::as_const(m_devices)) {
+        if (Lighting(d).effects().isEmpty())
+            continue;
+        const LightingSettings profile = m_config->device(d.profileKey).lighting;
+        if (off) {
+            // Devices whose lighting no profile sets get back what they had.
+            std::shared_ptr<LightingSettings> before;
+            if (!profile.isValid())
+                before = m_lightsBefore[d.hidPath] = std::make_shared<LightingSettings>();
+            m_sensorQueue.start([d, before] {
+                const Lighting lighting(d);
+                // Without a profile lighting or a way to read the current
+                // one there'd be nothing to bring back: leave it lit.
+                if (before && !lighting.read(before.get())) {
+                    *before = LightingSettings();
+                    return;
+                }
+                LightingSettings dark;
+                dark.effect = LightingSettings::Off;
+                lighting.write(dark);
+            });
+            m_appliedLighting.remove(d.hidPath);
+        } else if (profile.isValid()) {
+            m_appliedLighting.insert(d.hidPath, profile);
+            m_sensorQueue.start([d, profile] { Lighting(d).write(profile); });
+        } else if (const auto before = m_lightsBefore.value(d.hidPath)) {
+            m_sensorQueue.start([d, before] {
+                if (before->isValid())
+                    Lighting(d).write(*before);
+            });
+        }
+    }
+    if (!off)
+        m_lightsBefore.clear();
 }
 
 void RemapManager::markLightingApplied(const QString &hidPath, const LightingSettings &settings)
