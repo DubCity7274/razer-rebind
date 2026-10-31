@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### New features
+
+- **Keyboard pictures and per-key lighting for more keyboards.** 35 more
+  full-size, tenkeyless and 60% keyboards (BlackWidow, Huntsman, Ornata,
+  Cynosa and DeathStalker V2 models) get a drawn keyboard picture instead of
+  the keycap grid, and the Custom (per key) effect with Paint keys. Their
+  key positions follow OpenRazer's key table and haven't been checked on
+  the keyboards themselves yet. Keys the picture doesn't have show up below
+  it when pressed, so they can still be bound.
+
 ## 1.0.0 (2026-10-19)
 
 ### New features

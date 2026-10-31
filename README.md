@@ -68,6 +68,18 @@ Razer Rebind was developed with the **Razer Huntsman Elite** keyboard and the
 - Razer Viper, Viper Ultimate (wired and wireless) and Viper 8KHz, which
   share the same shape and buttons
 
+Most full-size, tenkeyless and 60% Razer keyboards get a drawn keyboard
+picture too, with per-key lighting: the BlackWidow (Chroma, X, Elite,
+Essential, 2019, V3, V3 Pro, V3 Tenkeyless, V4 X, V4 Tenkeyless), Huntsman
+(Huntsman, Tournament Edition, V2, V2 Tenkeyless, V2 Analog, V3 Pro, V3 Pro
+TKL, Mini, Mini Analog, V3 Pro Mini), Ornata, Ornata V2, Cynosa, Cynosa
+Pro, Cynosa V2 and DeathStalker V2 models. Their main keys sit in the same
+places as on the Huntsman Elite, following OpenRazer's own key table. Keys
+the picture doesn't have, like macro keys, media keys and volume wheels,
+appear below it once pressed. These pictures haven't been checked on the
+real keyboards yet; if a key lights the wrong LED on yours, please open an
+issue.
+
 Any other keyboard or mouse driven by OpenRazer works too, with every
 feature, but instead of a picture it gets a grid of keycaps: the inputs that
 have bindings, plus every key or button you press on it while it's
@@ -328,7 +340,7 @@ and brightness. Changes apply right away.
 | Reactive | colour, and how long a pressed key stays lit |
 | Starlight | one colour, two colours, or random, and speed (keyboards) |
 | Ripple | colour or random (keyboards, needs openrazer-daemon) |
-| Custom (per key) | a colour for each key, the unlit keys and the edges (Huntsman Elite) |
+| Custom (per key) | a colour for each key, the unlit keys and the edges (keyboards with a picture) |
 
 **Custom (per key)** colours each key on its own. Turn on **Paint keys**,
 pick a **Brush** colour, and click keys on the keyboard picture, or drag
@@ -339,8 +351,10 @@ the colour of keys you haven't painted, **Edges** that of strip segments you
 haven't painted, and **Clear keys** starts over. While painting, clicks don't
 open bindings; turn **Paint keys** off to edit bindings again. The picture
 shows each key's colour as a strip on the keycap, and the light strips in
-their colours, for Custom and Static. Per-key lighting needs a map of where each key's LED sits,
-which only the Huntsman Elite has so far.
+their colours, for Custom and Static. Per-key lighting needs a map of where
+each key's LED sits, so it's offered on the keyboards that have a picture
+(see [Supported devices](#supported-devices)). Only the Huntsman Elite has
+light strips around it to paint.
 
 The lighting turns off by itself after 15 minutes without input from your
 Razer devices (keys, buttons or mouse movement), and while the screen is

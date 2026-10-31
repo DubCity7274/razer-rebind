@@ -401,6 +401,7 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
                 m_lighting->paintKey(code, true);
         });
     }
+    // Only keyboards have per-key LEDs; any keyboard with a map uses this view.
     connect(m_lighting, &LightingPanel::previewChanged, m_keyboardView, &DeviceView::setKeyColours);
     connect(m_lighting, &LightingPanel::paintingChanged, this, [this](bool on) {
         for (DeviceView *v : {m_keyboardView, m_mouseView, static_cast<DeviceView *>(m_genericView)})
@@ -447,8 +448,7 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
         if (code == Keys::WheelUp || code == Keys::WheelDown) {
             // Wheel "presses" are instantaneous; flash them briefly.
             if (pressed) {
-                if (currentView() == m_genericView)
-                    m_genericView->noteInput(code);
+                currentView()->noteInput(code);
                 currentView()->setPressed(code, true);
                 QTimer::singleShot(120, this, [this, code] {
                     if (DeviceView *v = currentView())
@@ -457,8 +457,8 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
             }
             return;
         }
-        if (pressed && currentView() == m_genericView)
-            m_genericView->noteInput(code);
+        if (pressed)
+            currentView()->noteInput(code);
         currentView()->setPressed(code, pressed);
     });
 
@@ -535,7 +535,7 @@ DeviceView *MainWindow::currentView() const
     if (!dev)
         return m_keyboardView;
     switch (pictureFor(*dev)) {
-    case DevicePicture::HuntsmanElite: return m_keyboardView;
+    case DevicePicture::Keyboard: return m_keyboardView;
     case DevicePicture::Viper: return m_mouseView;
     case DevicePicture::Generic: return m_genericView;
     }
@@ -614,7 +614,8 @@ void MainWindow::selectDevice()
         m_detailsCache.insert(dev->hidPath, parts.join(QStringLiteral("  ·  ")));
     }
     refreshDetails();
-    m_genericView->setDevice(*dev);
+    for (DeviceView *v : {m_keyboardView, m_mouseView, static_cast<DeviceView *>(m_genericView)})
+        v->setDevice(*dev);
     // Docks and headsets have lighting (and profiles for it) but nothing to
     // rebind.
     const bool accessory = dev->kind == RazerDevice::Accessory;

@@ -110,8 +110,14 @@ daemon and needs it. Custom (per key) sends a whole frame, a row at a time
 (`setKeyRow`, or `matrix_custom_frame` without the daemon), built from the
 key-to-LED map in `src/ledmap.cpp`. The daemon doesn't remember custom
 frames, so the app sends the frame again whenever the device reappears.
-A map for another keyboard needs checking on the hardware: light single
-matrix cells and see which key they are.
+The Huntsman Elite's map was checked on the hardware, light strips
+included. Other keyboards are listed in the `Models` table there with their
+layout (full size, tenkeyless or 60%) and OpenRazer's matrix size; their
+main keys are the Huntsman Elite's, which match OpenRazer's `KEY_MAPPING`,
+trimmed to that layout. A model that differs gets its corrections in
+`mainKeys()`, as the BlackWidow Elite does. To check one on the hardware,
+light single matrix cells and see which key they are. `tests/ledmap_test.cpp`
+checks every map stays inside its matrix with no two keys on one LED.
 
 Automatic profile switching reads `/proc` every two seconds for the user's
 processes. A process is known by argv[0] (which holds the Windows path for
@@ -152,7 +158,7 @@ are polled once a minute on a background thread.
 | `src/sensor.*` | Mouse DPI stages and polling rate, through openrazer-daemon or sysfs |
 | `src/sensorpanel.*` | The DPI / polling rate bar in the main window |
 | `src/lighting.*` | Lighting effects and brightness, through openrazer-daemon or sysfs |
-| `src/ledmap.*` | Which LED of a keyboard's matrix each key lights (Huntsman Elite) |
+| `src/ledmap.*` | Each keyboard's layout and which LED of its matrix each key lights |
 | `src/lightingpanel.*` | The lighting bar in the main window |
 | `src/processes.*` | The user's running programs, read from `/proc` |
 | `src/autoswitcher.*` | Switches profiles while their linked programs run |
@@ -161,7 +167,7 @@ are polled once a minute on a background thread.
 | `src/notifications.*` | Desktop notifications over `org.freedesktop.Notifications` |
 | `src/settingsdialog.*` | Notification and battery settings |
 | `src/keys.*` | Key names and labels, and which codes are safe to emit |
-| `src/deviceview.*` | Clickable Huntsman Elite and Viper pictures, and the generic keycap grid for other devices |
+| `src/deviceview.*` | Clickable keyboard (full size, tenkeyless, 60%) and Viper pictures, and the generic keycap grid for other devices |
 | `src/macrodialog.*` | Macro recorder and step editor |
 | `src/bindingdialog.*` | Binding editor (search, detect, record shortcut) |
 | `src/hotkeydialog.*` | Hotkey list and editor |

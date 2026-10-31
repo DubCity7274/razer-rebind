@@ -63,6 +63,11 @@ if(BUILD_TESTING)
     target_include_directories(autoswitch_test PRIVATE src)
     target_link_libraries(autoswitch_test PRIVATE Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus PkgConfig::LIBEVDEV Threads::Threads)
     add_test(NAME autoswitch COMMAND autoswitch_test)
+
+    add_executable(ledmap_test tests/ledmap_test.cpp src/ledmap.cpp src/keys.cpp src/razerdevice.cpp)
+    target_include_directories(ledmap_test PRIVATE src)
+    target_link_libraries(ledmap_test PRIVATE Qt6::Core Qt6::Gui PkgConfig::LIBEVDEV)
+    add_test(NAME ledmap COMMAND ledmap_test)
 endif()
 
 include(GNUInstallDirs)

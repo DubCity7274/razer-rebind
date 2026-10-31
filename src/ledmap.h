@@ -6,8 +6,16 @@
 #include <QList>
 #include <QPoint>
 
+// Which key layout a keyboard has, for its picture and its LED map.
+// HuntsmanElite was checked on the hardware, with its media keys and light
+// strips; the others are the same main keys, from OpenRazer's own key table,
+// trimmed to the keyboard's size.
+enum class KeyboardLayout { None, HuntsmanElite, FullSize, Tenkeyless, Mini };
+KeyboardLayout keyboardLayout(const RazerDevice &device);
+// Only HuntsmanElite has been tested on the real keyboard.
+inline bool layoutVerified(KeyboardLayout l) { return l == KeyboardLayout::HuntsmanElite; }
+
 // Where a keyboard's keys sit in its LED matrix, for per-key lighting.
-// Only keyboards checked on real hardware have a map.
 struct LedMap
 {
     int rows = 0;

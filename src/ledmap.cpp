@@ -4,6 +4,8 @@
 
 #include <linux/input-event-codes.h>
 
+#include <QList>
+
 namespace {
 
 // Razer Huntsman Elite: a 22 x 9 matrix. Rows 0-5 are the keys (ANSI;
@@ -50,11 +52,126 @@ LedMap huntsmanElite()
     return m;
 }
 
+// Keyboards whose main keys sit where the Huntsman Elite's do. That's the
+// layout OpenRazer's daemon uses for its ripple effect on every keyboard
+// (KEY_MAPPING in openrazer_daemon/keyboard.py), and it matches the
+// Huntsman Elite's map checked on the hardware. Media keys, volume wheels
+// and macro keys move around between models, so they're left out. The
+// matrix size is OpenRazer's MATRIX_DIMS for the model.
+struct Model
+{
+    int productId;
+    KeyboardLayout layout;
+    int rows;
+    int columns;
+};
+
+constexpr Model Models[] = {
+    // Full size
+    {0x0203, KeyboardLayout::FullSize, 6, 22},   // BlackWidow Chroma
+    {0x0211, KeyboardLayout::FullSize, 6, 22},   // BlackWidow Chroma (Overwatch)
+    {0x0214, KeyboardLayout::FullSize, 6, 22},   // BlackWidow Ultimate 2016
+    {0x0216, KeyboardLayout::FullSize, 6, 22},   // BlackWidow X Chroma
+    {0x0217, KeyboardLayout::FullSize, 6, 22},   // BlackWidow X Ultimate
+    {0x0221, KeyboardLayout::FullSize, 6, 22},   // BlackWidow Chroma V2
+    {0x0228, KeyboardLayout::FullSize, 6, 22},   // BlackWidow Elite
+    {0x0237, KeyboardLayout::FullSize, 6, 22},   // BlackWidow Essential
+    {0x0241, KeyboardLayout::FullSize, 6, 22},   // BlackWidow 2019
+    {0x024E, KeyboardLayout::FullSize, 6, 22},   // BlackWidow V3
+    {0x025A, KeyboardLayout::FullSize, 6, 22},   // BlackWidow V3 Pro (wired)
+    {0x025C, KeyboardLayout::FullSize, 6, 22},   // BlackWidow V3 Pro (wireless)
+    {0x0293, KeyboardLayout::FullSize, 6, 22},   // BlackWidow V4 X
+    {0x021E, KeyboardLayout::FullSize, 6, 22},   // Ornata Chroma
+    {0x021F, KeyboardLayout::FullSize, 6, 22},   // Ornata
+    {0x025D, KeyboardLayout::FullSize, 6, 22},   // Ornata V2
+    {0x022A, KeyboardLayout::FullSize, 6, 22},   // Cynosa Chroma
+    {0x022C, KeyboardLayout::FullSize, 6, 22},   // Cynosa Chroma Pro
+    {0x025E, KeyboardLayout::FullSize, 6, 22},   // Cynosa V2
+    {0x0227, KeyboardLayout::FullSize, 6, 22},   // Huntsman
+    {0x026C, KeyboardLayout::FullSize, 6, 22},   // Huntsman V2
+    {0x0266, KeyboardLayout::FullSize, 8, 22},   // Huntsman V2 Analog (rows 6-7: underglow)
+    {0x02A6, KeyboardLayout::FullSize, 6, 22},   // Huntsman V3 Pro
+    {0x02CF, KeyboardLayout::FullSize, 6, 22},   // Huntsman V3 Pro 8KHz
+    {0x0295, KeyboardLayout::FullSize, 6, 22},   // DeathStalker V2
+    {0x0292, KeyboardLayout::FullSize, 6, 22},   // DeathStalker V2 Pro (wired)
+    {0x0290, KeyboardLayout::FullSize, 6, 22},   // DeathStalker V2 Pro (wireless)
+    // Tenkeyless: the same columns, without the numpad
+    {0x0209, KeyboardLayout::Tenkeyless, 6, 22}, // BlackWidow Chroma Tournament Edition
+    {0x021A, KeyboardLayout::Tenkeyless, 6, 22}, // BlackWidow X Tournament Edition Chroma
+    {0x0A24, KeyboardLayout::Tenkeyless, 6, 18}, // BlackWidow V3 Tenkeyless
+    {0x02D7, KeyboardLayout::Tenkeyless, 6, 18}, // BlackWidow V4 Tenkeyless HyperSpeed (wired)
+    {0x02D5, KeyboardLayout::Tenkeyless, 6, 18}, // BlackWidow V4 Tenkeyless HyperSpeed (wireless)
+    {0x0243, KeyboardLayout::Tenkeyless, 6, 18}, // Huntsman Tournament Edition
+    {0x026B, KeyboardLayout::Tenkeyless, 6, 18}, // Huntsman V2 Tenkeyless
+    {0x02A7, KeyboardLayout::Tenkeyless, 6, 22}, // Huntsman V3 Pro TKL
+    // 60%: no function row, so everything moves up a row
+    {0x0257, KeyboardLayout::Mini, 5, 15},       // Huntsman Mini
+    {0x0282, KeyboardLayout::Mini, 5, 15},       // Huntsman Mini Analog
+    {0x02B0, KeyboardLayout::Mini, 5, 15},       // Huntsman V3 Pro Mini
+};
+
+const Model *model(const RazerDevice &device)
+{
+    if (device.kind != RazerDevice::Keyboard)
+        return nullptr;
+    for (const Model &m : Models)
+        if (m.productId == device.productId)
+            return &m;
+    return nullptr;
+}
+
+// The main keys: the Huntsman Elite's map without its media keys, dial and
+// light strips, trimmed to the layout.
+LedMap mainKeys(const Model &model)
+{
+    static const QList<int> media = {KEY_PREVIOUSSONG, KEY_PLAYPAUSE, KEY_NEXTSONG, KEY_MUTE, KEY_VOLUMEDOWN, KEY_VOLUMEUP};
+    LedMap m;
+    m.rows = model.rows;
+    m.columns = model.columns;
+    const LedMap full = huntsmanElite();
+    for (auto it = full.keys.cbegin(); it != full.keys.cend(); ++it) {
+        if (media.contains(it.key()))
+            continue;
+        QPoint at = *it;
+        int code = it.key();
+        if (model.layout == KeyboardLayout::Tenkeyless && at.x() >= 18)
+            continue;
+        if (model.layout == KeyboardLayout::Mini) {
+            // Esc takes the ` key's place (` is on Fn+Esc).
+            if (at.y() == 0 || at.x() >= 15 || code == KEY_ESC)
+                continue;
+            if (code == KEY_GRAVE)
+                code = KEY_ESC;
+            at.ry() -= 1;
+        }
+        if (at.x() < m.columns && at.y() < m.rows)
+            m.keys.insert(code, at);
+    }
+    // The BlackWidow Elite's space bar and right Alt sit a column to the
+    // left (from Polychromatic's map of it).
+    if (model.productId == 0x0228) {
+        m.keys[KEY_SPACE] = QPoint(6, 5);
+        m.keys[KEY_RIGHTALT] = QPoint(10, 5);
+    }
+    return m;
+}
+
 } // namespace
+
+KeyboardLayout keyboardLayout(const RazerDevice &device)
+{
+    if (device.kind == RazerDevice::Keyboard && device.productId == 0x0226)
+        return KeyboardLayout::HuntsmanElite;
+    if (const Model *m = model(device))
+        return m->layout;
+    return KeyboardLayout::None;
+}
 
 LedMap ledMap(const RazerDevice &device)
 {
     if (device.kind == RazerDevice::Keyboard && device.productId == 0x0226)
         return huntsmanElite();
+    if (const Model *m = model(device))
+        return mainKeys(*m);
     return {};
 }

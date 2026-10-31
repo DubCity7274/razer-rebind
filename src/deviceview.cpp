@@ -121,6 +121,21 @@ void DeviceView::clearPressed()
     update();
 }
 
+void DeviceView::setDevice(const RazerDevice &device)
+{
+    m_device = device;
+    relayout();
+}
+
+void DeviceView::noteInput(int code)
+{
+    QList<int> &seen = m_seen[m_device.hidPath];
+    if (code > 0 && !seen.contains(code)) {
+        seen << code;
+        relayout();
+    }
+}
+
 QSize DeviceView::minimumSizeHint() const
 {
     const QSizeF d = designSize();
@@ -320,7 +335,73 @@ bool DeviceView::event(QEvent *e)
 
 // --- Keyboard ---------------------------------------------------------------
 
+namespace {
+constexpr qreal ExtraKeyW = 1.5, ExtraKeyH = 1.0;
+} // namespace
+
+KeyboardLayout KeyboardView::layout() const
+{
+    // No device yet: the full picture.
+    const KeyboardLayout l = keyboardLayout(device());
+    return l == KeyboardLayout::None ? KeyboardLayout::HuntsmanElite : l;
+}
+
+QSizeF KeyboardView::keysSize() const
+{
+    switch (layout()) {
+    case KeyboardLayout::Tenkeyless: return {18.25, 6.25};
+    case KeyboardLayout::Mini: return {15.0, 5.0};
+    default: return {22.5, 6.25};
+    }
+}
+
+QList<int> KeyboardView::extraCodes() const
+{
+    if (layout() == KeyboardLayout::HuntsmanElite)
+        return {};
+    // The picture's keys, laid out without the extras.
+    QSet<int> drawn;
+    for (const Region &r : mainRegions())
+        drawn.insert(r.code);
+    QList<int> out;
+    for (const QList<int> &list : {boundCodes(), seenCodes()})
+        for (int c : list)
+            if (!drawn.contains(c) && !out.contains(c))
+                out << c;
+    return out;
+}
+
+QSizeF KeyboardView::designSize() const
+{
+    // With edge lighting shown, room around the keys for the light strips and
+    // the wrist rest below them.
+    if (layout() == KeyboardLayout::HuntsmanElite)
+        return showsEdgeLights() ? QSizeF(23.7, 9.0) : QSizeF(22.5, 7.0);
+    // Below the keys: the hint, then a row of keycaps for the extras.
+    const QSizeF keys = keysSize();
+    const int perRow = int(keys.width() / ExtraKeyW);
+    const int extraRows = int((extraCodes().size() + perRow - 1) / perRow);
+    return {keys.width(), keys.height() + 0.75 + extraRows * ExtraKeyH};
+}
+
 QVector<DeviceView::Region> KeyboardView::regions() const
+{
+    QVector<Region> out = mainRegions();
+    if (layout() != KeyboardLayout::HuntsmanElite) {
+        const QSizeF keys = keysSize();
+        const int perRow = int(keys.width() / ExtraKeyW);
+        const QList<int> extras = extraCodes();
+        for (int i = 0; i < extras.size(); ++i) {
+            const qreal x = (i % perRow) * ExtraKeyW;
+            const qreal y = keys.height() + 0.75 + (i / perRow) * ExtraKeyH;
+            out.push_back({extras[i], Keys::label(extras[i]), roundedKey(x, y, ExtraKeyW, ExtraKeyH)});
+        }
+        return out;
+    }
+    return withEdges(out);
+}
+
+QVector<DeviceView::Region> KeyboardView::mainRegions() const
 {
     QVector<Region> out;
     using K = std::tuple<int, const char *, qreal>;
@@ -379,6 +460,37 @@ QVector<DeviceView::Region> KeyboardView::regions() const
             r.lightOnly = true;
     }
 
+    // Other keyboards: the same main keys, without the media keys and dial,
+    // trimmed to their size.
+    const KeyboardLayout l = layout();
+    if (l == KeyboardLayout::HuntsmanElite)
+        return out;
+    static const QList<int> media = {KEY_PREVIOUSSONG, KEY_PLAYPAUSE, KEY_NEXTSONG, KEY_MUTE, KEY_VOLUMEDOWN, KEY_VOLUMEUP};
+    QVector<Region> trimmed;
+    for (Region r : out) {
+        const QRectF k = r.path.boundingRect();
+        if (media.contains(r.code))
+            continue;
+        if (l == KeyboardLayout::Tenkeyless && k.left() > 18.25)
+            continue;
+        if (l == KeyboardLayout::Mini) {
+            // No function row, navigation keys or numpad; Esc takes the `
+            // key's place.
+            if (k.top() < 1 || k.left() > 15)
+                continue;
+            if (r.code == KEY_GRAVE) {
+                r.code = KEY_ESC;
+                r.label = QStringLiteral("Esc");
+            }
+            r.path.translate(0, -1.25);
+        }
+        trimmed.push_back(r);
+    }
+    return trimmed;
+}
+
+QVector<DeviceView::Region> KeyboardView::withEdges(QVector<Region> out) const
+{
     if (!showsEdgeLights())
         return out;
     // Room for the strips: move the keys in, then lay the strips' LEDs out
@@ -477,10 +589,23 @@ void KeyboardView::paintOverlay(QPainter &p) const
     f.setPixelSize(std::max(8, int(t.m11() * 0.22)));
     p.setFont(f);
     p.setPen(palette().color(QPalette::PlaceholderText));
-    const qreal shift = showsEdgeLights() ? 0.6 : 0;
-    p.drawText(t.mapRect(QRectF(shift, 6.3 + shift, 18, 0.6)), Qt::AlignLeft | Qt::AlignVCenter,
-               paintMode() ? tr("Click or drag over keys and edge lights to paint them; right-click to unlight.")
-                           : tr("Click a key to rebind it. Keys light up while held."));
+    const KeyboardLayout l = layout();
+    if (l == KeyboardLayout::HuntsmanElite) {
+        const qreal shift = showsEdgeLights() ? 0.6 : 0;
+        p.drawText(t.mapRect(QRectF(shift, 6.3 + shift, 18, 0.6)), Qt::AlignLeft | Qt::AlignVCenter,
+                   paintMode() ? tr("Click or drag over keys and edge lights to paint them; right-click to unlight.")
+                               : tr("Click a key to rebind it. Keys light up while held."));
+        p.restore();
+        return;
+    }
+    const QSizeF keys = keysSize();
+    QString text = paintMode() ? tr("Click or drag over keys to paint them; right-click to unlight.")
+                               : tr("Click a key to rebind it. Keys this picture doesn't have (macro, media) "
+                                    "show up below when pressed.");
+    if (paintMode() && !layoutVerified(l))
+        text += QLatin1Char(' ') + tr("Key positions for this model haven't been checked on the keyboard yet.");
+    p.drawText(t.mapRect(QRectF(0, keys.height() + 0.05, keys.width(), 0.65)),
+               Qt::AlignLeft | Qt::AlignVCenter | Qt::TextWordWrap, text);
     p.restore();
 }
 
@@ -594,8 +719,8 @@ constexpr qreal GenericKeyW = 2.0, GenericKeyH = 1.3, GenericTop = 1.4;
 
 DevicePicture pictureFor(const RazerDevice &device)
 {
-    if (device.kind == RazerDevice::Keyboard && device.productId == 0x0226)
-        return DevicePicture::HuntsmanElite;
+    if (keyboardLayout(device) != KeyboardLayout::None)
+        return DevicePicture::Keyboard;
     // Viper, Viper Ultimate (wired and wireless) and Viper 8KHz share the shape.
     if (device.kind == RazerDevice::Mouse
         && (device.productId == 0x0078 || device.productId == 0x007a || device.productId == 0x007b
@@ -604,26 +729,11 @@ DevicePicture pictureFor(const RazerDevice &device)
     return DevicePicture::Generic;
 }
 
-void GenericView::setDevice(const RazerDevice &device)
-{
-    m_device = device;
-    relayout();
-}
-
-void GenericView::noteInput(int code)
-{
-    QList<int> &seen = m_seen[m_device.hidPath];
-    if (code > 0 && !seen.contains(code)) {
-        seen << code;
-        relayout();
-    }
-}
-
 QList<int> GenericView::codes() const
 {
     // Bound inputs first, in code order, then the rest as they were pressed.
     QList<int> out = boundCodes();
-    for (int c : m_seen.value(m_device.hidPath))
+    for (int c : seenCodes())
         if (!out.contains(c))
             out << c;
     return out;
@@ -656,12 +766,12 @@ void GenericView::paintOverlay(QPainter &p) const
     f.setPixelSize(std::max(11, int(t.m11() * 0.3)));
     p.setFont(f);
     p.setPen(palette().color(QPalette::PlaceholderText));
-    const QString what = m_device.kind == RazerDevice::Mouse ? tr("button") : tr("key");
+    const QString what = device().kind == RazerDevice::Mouse ? tr("button") : tr("key");
     const QString text = codes().isEmpty()
                              ? tr("There's no picture of the %1 yet. Press a %2 on it and it shows up here; "
-                                  "click it to rebind it.").arg(m_device.profileKey, what)
+                                  "click it to rebind it.").arg(device().profileKey, what)
                              : tr("There's no picture of the %1 yet: press a %2 on it to add it here, then "
-                                  "click it to rebind it.").arg(m_device.profileKey, what);
+                                  "click it to rebind it.").arg(device().profileKey, what);
     p.drawText(t.mapRect(QRectF(0, 0, GenericColumns * GenericKeyW, GenericTop - 0.2)),
                Qt::AlignLeft | Qt::AlignVCenter | Qt::TextWordWrap, text);
     p.restore();

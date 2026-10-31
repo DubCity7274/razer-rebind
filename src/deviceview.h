@@ -1,6 +1,7 @@
 #pragma once
 
 #include "keys.h"
+#include "ledmap.h"
 #include "razerdevice.h"
 
 #include <QPainterPath>
@@ -28,6 +29,10 @@ public:
     // Painting lighting: clicks paint keys instead of editing bindings.
     void setPaintMode(bool paint);
     void clearPressed();
+    // The device shown, and inputs pressed on it: views without a key for an
+    // input give it a keycap, so everything the device sends can be bound.
+    void setDevice(const RazerDevice &device);
+    void noteInput(int code);
 
 signals:
     void keyClicked(int code);
@@ -58,6 +63,9 @@ protected:
     // Whether the lighting shown includes the edge strips' LEDs.
     bool showsEdgeLights() const;
     bool paintMode() const { return m_paintMode; }
+    const RazerDevice &device() const { return m_device; }
+    // Inputs pressed on the device since it was selected, in that order.
+    QList<int> seenCodes() const { return m_seen.value(m_device.hidPath); }
     // Lay the regions out again (the generic view's change with its inputs).
     void relayout();
     QColor accent() const { return m_accent.isValid() ? m_accent : palette().color(QPalette::Highlight); }
@@ -84,6 +92,8 @@ private:
     Qt::MouseButton m_dragButton = Qt::NoButton;
     QSet<int> m_pressed;
     int m_hover = -1;
+    RazerDevice m_device;
+    QHash<QString, QList<int>> m_seen; // by hidPath, in the order first pressed
 };
 
 class KeyboardView : public DeviceView
@@ -94,11 +104,17 @@ public:
 
 protected:
     QVector<Region> regions() const override;
-    // With edge lighting shown, room around the keys for the light strips and
-    // the wrist rest below them.
-    QSizeF designSize() const override { return showsEdgeLights() ? QSizeF(23.7, 9.0) : QSizeF(22.5, 7.0); }
+    QSizeF designSize() const override;
     void paintDecoration(QPainter &) const override;
     void paintOverlay(QPainter &) const override;
+
+private:
+    QVector<Region> mainRegions() const;                // the keys
+    QVector<Region> withEdges(QVector<Region> out) const; // plus the Huntsman Elite's light strips
+    KeyboardLayout layout() const;
+    QSizeF keysSize() const; // the keys' area, without edge strips or extra keys
+    // Inputs the picture has no key for, bound or pressed on the device.
+    QList<int> extraCodes() const;
 };
 
 class MouseView : public DeviceView
@@ -125,9 +141,6 @@ class GenericView : public DeviceView
 public:
     using DeviceView::DeviceView;
 
-    void setDevice(const RazerDevice &device);
-    void noteInput(int code); // pressed on the device: give it a keycap
-
 protected:
     QVector<Region> regions() const override;
     QSizeF designSize() const override;
@@ -135,11 +148,10 @@ protected:
 
 private:
     QList<int> codes() const;
-
-    RazerDevice m_device;
-    QHash<QString, QList<int>> m_seen; // by hidPath, in the order first pressed
 };
 
 // Which picture fits a device: only the models it was drawn from.
-enum class DevicePicture { HuntsmanElite, Viper, Generic };
+// Keyboards with a known layout (see keyboardLayout()) use the keyboard
+// picture, trimmed to their size.
+enum class DevicePicture { Keyboard, Viper, Generic };
 DevicePicture pictureFor(const RazerDevice &device);
