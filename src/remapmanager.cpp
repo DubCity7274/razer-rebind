@@ -2,6 +2,7 @@
 
 #include "notifications.h"
 #include "remapper.h"
+#include "ledmap.h"
 #include "lighting.h"
 #include "sensor.h"
 
@@ -341,6 +342,7 @@ void RemapManager::addRemapper(const RazerDevice &dev)
     });
     connect(r, &Remapper::commandTriggered, this, &RemapManager::runCommand);
     connect(r, &Remapper::activity, this, &RemapManager::activity);
+    connect(r, &Remapper::hypershiftChanged, this, &RemapManager::showHypershiftLayer);
     connect(r, &Remapper::gameModeKey, this, [this] { toggleGameMode(m_config->notifications); });
     connect(r, &Remapper::dpiTriggered, this, [this, dev](int action, int clutchDpi, bool pressed) {
         handleDpi(dev, action, clutchDpi, pressed);
@@ -533,10 +535,67 @@ void RemapManager::stepBrightness(const QString &device, int step, bool notifyUs
         notify(text);
 }
 
+void RemapManager::showHypershiftLayer(bool held)
+{
+    if (!held) {
+        for (const RazerDevice &d : std::as_const(m_devices)) {
+            if (!m_layerBefore.contains(d.hidPath))
+                continue;
+            const auto before = m_layerBefore.take(d.hidPath);
+            const LightingSettings profile = m_config->device(d.profileKey).lighting;
+            if (profile.isValid()) {
+                m_appliedLighting.insert(d.hidPath, profile);
+                m_sensorQueue.start([d, profile] { Lighting(d).write(profile); });
+            } else if (before) {
+                m_sensorQueue.start([d, before] {
+                    if (before->isValid())
+                        Lighting(d).write(*before);
+                });
+            }
+        }
+        m_layerBefore.clear();
+        return;
+    }
+    if (m_lightsOff || !m_config->hypershiftLights)
+        return;
+    for (const RazerDevice &d : std::as_const(m_devices)) {
+        if (ledMap(d).isEmpty())
+            continue;
+        const DeviceProfile p = m_config->device(d.profileKey);
+        LightingSettings layer = p.hypershiftLighting();
+        if (!layer.isValid())
+            continue;
+        std::shared_ptr<LightingSettings> before;
+        if (p.lighting.isValid())
+            layer.brightness = p.lighting.brightness;
+        else
+            before = std::make_shared<LightingSettings>();
+        m_layerBefore.insert(d.hidPath, before);
+        m_sensorQueue.start([d, layer, before]() mutable {
+            const Lighting lighting(d);
+            if (!lighting.effects().contains(LightingSettings::Custom))
+                return;
+            // Nothing to bring back afterwards: leave it as it is.
+            if (before) {
+                if (!lighting.read(before.get()) || !before->isValid()) {
+                    *before = LightingSettings();
+                    return;
+                }
+                layer.brightness = before->brightness;
+            }
+            lighting.write(layer);
+        });
+    }
+}
+
 void RemapManager::setLightsOff(bool off)
 {
     if (off == m_lightsOff)
         return;
+    // Lights out takes over from the layer: the lighting to save or put back
+    // later is the real one.
+    if (off)
+        showHypershiftLayer(false);
     m_lightsOff = off;
     for (const RazerDevice &d : std::as_const(m_devices)) {
         if (Lighting(d).effects().isEmpty())

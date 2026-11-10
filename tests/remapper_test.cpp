@@ -3,10 +3,12 @@
 // the evdev ioctls are stubbed, and uinput output is recorded instead of
 // reaching the kernel.
 
+#include "bindinghistory.h"
 #include "remapper.h"
 
 #include <QCoreApplication>
 #include <QFile>
+#include <QMutex>
 #include <QTemporaryDir>
 
 #include <libevdev/libevdev-uinput.h>
@@ -717,6 +719,97 @@ int main(int argc, char **argv)
         CHECK(loaded.load(c.path(), nullptr));
         CHECK(loaded.device(QStringLiteral("kbd")).gameMode == gp.gameMode);
         kbd.remapper->setProfile(kp);
+    }
+
+    // The layer is signalled once when the first Hypershift key goes down
+    // and once when the last comes up, whichever device they're on.
+    {
+        QMutex lock;
+        QList<bool> changes;
+        auto note = [&](bool held) {
+            QMutexLocker l(&lock);
+            changes << held;
+        };
+        auto c1 = QObject::connect(kbd.remapper, &Remapper::hypershiftChanged, note);
+        auto c2 = QObject::connect(mouse.remapper, &Remapper::hypershiftChanged, note);
+        mouse.key(BTN_SIDE, 1);
+        kbd.key(KEY_CAPSLOCK, 1);
+        mouse.key(BTN_SIDE, 0);
+        kbd.key(KEY_CAPSLOCK, 0);
+        takeOutput();
+        QMutexLocker l(&lock);
+        CHECK((changes == QList<bool>{true, false}));
+        l.unlock();
+        QObject::disconnect(c1);
+        QObject::disconnect(c2);
+    }
+
+    // What the keyboard shows while Hypershift is held.
+    {
+        DeviceProfile lit = kp;
+        lit.hypershift.insert(KEY_H, makeBinding({}, 0, {}, 0)); // disabled: stays dark
+        lit.hypershift.insert(Keys::trigger(Keys::ModCtrl, KEY_J), makeBinding({KEY_K}, 0, {}, 0)); // a combo's key
+        const LightingSettings s = lit.hypershiftLighting();
+        CHECK(s.effect == LightingSettings::Custom);
+        CHECK(s.keys.value(KEY_A) == QColor(0x80, 0x00, 0xff));
+        CHECK(s.keys.contains(KEY_J));
+        CHECK(!s.keys.contains(KEY_H) && !s.keys.contains(KEY_Z) && !s.keys.contains(KEY_D));
+        CHECK(s.keys.value(KEY_CAPSLOCK) == QColor(Qt::white));
+        CHECK(s.unlit == QColor(Qt::black));
+        CHECK(!DeviceProfile().hypershiftLighting().isValid());
+        DeviceProfile noLayer;
+        noLayer.bindings = kp.bindings;
+        CHECK(!noLayer.hypershiftLighting().isValid());
+    }
+
+    // Undo and redo of binding edits.
+    {
+        const BindingLayers a, b{{{KEY_A, makeBinding({KEY_B}, 0, {}, 0)}}, {}};
+        const BindingLayers c{b.normal, {{KEY_C, makeBinding({KEY_D}, 0, {}, 0)}}};
+        BindingHistory h;
+        CHECK(!h.canUndo(a) && !h.canRedo(a));
+        h.record(QStringLiteral("one"), false, a, a); // nothing changed
+        CHECK(!h.canUndo(a));
+        h.record(QStringLiteral("one"), false, a, b);
+        h.record(QStringLiteral("two"), true, b, c);
+        CHECK(h.canUndo(c) && !h.canRedo(c) && h.undoName() == QStringLiteral("two"));
+        CHECK(!h.canUndo(a)); // the bindings changed some other way
+
+        BindingHistory::Edit e = h.undo();
+        CHECK(e.before == b && e.after == c && e.hypershiftLayer);
+        CHECK(h.canUndo(b) && h.canRedo(b) && h.redoName() == QStringLiteral("two"));
+        e = h.undo();
+        CHECK(e.before == a && !e.hypershiftLayer);
+        CHECK(!h.canUndo(a) && h.canRedo(a));
+        e = h.redo();
+        CHECK(e.after == b);
+        CHECK(h.canRedo(b) && h.undoName() == QStringLiteral("one"));
+
+        // A new edit drops what could be redone.
+        const BindingLayers d{{{KEY_E, makeBinding({KEY_F}, 0, {}, 0)}}, {}};
+        h.record(QStringLiteral("three"), false, b, d);
+        CHECK(h.canUndo(d) && !h.canRedo(d));
+
+        // One that doesn't follow from the last drops the stale steps.
+        h.record(QStringLiteral("four"), false, a, b);
+        CHECK(h.canUndo(b));
+        h.undo();
+        CHECK(!h.canUndo(a));
+
+        // The oldest steps go once there are too many.
+        BindingHistory longOne;
+        BindingLayers last = a;
+        for (int i = 1; i <= BindingHistory::MaxSteps + 5; ++i) {
+            BindingLayers next{{{KEY_A, makeBinding({i}, 0, {}, 0)}}, {}};
+            longOne.record(QString::number(i), false, last, next);
+            last = next;
+        }
+        int steps = 0;
+        while (longOne.canUndo(last)) {
+            last = longOne.undo().before;
+            ++steps;
+        }
+        CHECK(steps == BindingHistory::MaxSteps);
     }
 
     // A device that goes away while its Hypershift key is held doesn't leave

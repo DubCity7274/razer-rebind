@@ -9,6 +9,7 @@
 #include "config.h"
 #include "remapmanager.h"
 #include "remapper.h"
+#include "ledmap.h"
 #include "lightingpanel.h"
 #include "sensorpanel.h"
 #include "settingsdialog.h"
@@ -35,6 +36,7 @@
 #include <QMessageBox>
 #include <QPainter>
 #include <QPushButton>
+#include <QShortcut>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStatusBar>
@@ -217,6 +219,18 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
     layerRow->addWidget(m_layerHypershift);
     layerRow->addSpacing(12);
     layerRow->addWidget(m_layerHint, 1);
+    m_layerLights = new QCheckBox(tr("Show layer on keys"));
+    m_layerLights->setToolTip(tr("While a Hypershift key is held, light the keys bound in the Hypershift layer "
+                                 "and darken the rest"));
+    m_layerLights->setChecked(m_config->hypershiftLights);
+    connect(m_layerLights, &QCheckBox::toggled, this, [this](bool on) {
+        m_config->hypershiftLights = on;
+        QString error;
+        if (!m_config->save(&error))
+            QMessageBox::warning(this, tr("Could not save settings"), error);
+    });
+    layerRow->addSpacing(12);
+    layerRow->addWidget(m_layerLights);
 
     // Game mode, for keyboards: saved with the profile, so a game's profile
     // can block Super (and Alt+Tab, Alt+F4) while it runs.
@@ -285,6 +299,12 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
     auto *buttonRow = new QVBoxLayout;
     for (QPushButton *b : {addButton, m_editButton, m_removeButton, m_clearButton})
         buttonRow->addWidget(b);
+    m_undoButton = new QPushButton(tr("Undo"));
+    m_redoButton = new QPushButton(tr("Redo"));
+    auto *undoRow = new QHBoxLayout;
+    undoRow->addWidget(m_undoButton);
+    undoRow->addWidget(m_redoButton);
+    buttonRow->addLayout(undoRow);
     buttonRow->addStretch();
 
     m_bindingArea = new QWidget;
@@ -424,6 +444,18 @@ MainWindow::MainWindow(Config *config, RemapManager *manager, BatteryMonitor *ba
     });
     connect(m_removeButton, &QPushButton::clicked, this, &MainWindow::removeSelectedBinding);
     connect(m_clearButton, &QPushButton::clicked, this, &MainWindow::clearBindings);
+    connect(m_undoButton, &QPushButton::clicked, this, [this] { stepHistory(false); });
+    connect(m_redoButton, &QPushButton::clicked, this, [this] { stepHistory(true); });
+    // While painting, the keys are about lighting, not bindings.
+    auto historyShortcut = [this](const QKeySequence &keys, bool redo) {
+        connect(new QShortcut(keys, this), &QShortcut::activated, this, [this, redo] {
+            if (!m_lighting->isPainting() && m_bindingArea->isVisible())
+                stepHistory(redo);
+        });
+    };
+    historyShortcut(QKeySequence::Undo, false);
+    historyShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z), true);
+    historyShortcut(QKeySequence(Qt::CTRL | Qt::Key_Y), true);
 
     connect(m_manager, &RemapManager::devicesChanged, this, &MainWindow::rebuildDeviceList);
     connect(m_manager, &RemapManager::stateChanged, this, &MainWindow::refreshState);
@@ -624,6 +656,7 @@ void MainWindow::selectDevice()
                                  .arg(dev->profileKey));
     m_views->setCurrentWidget(accessory ? static_cast<QWidget *>(m_accessoryPage) : currentView());
     m_layerRow->setVisible(!accessory);
+    m_layerLights->setVisible(!ledMap(*dev).isEmpty());
     refreshGameMode();
     m_bindingArea->setVisible(!accessory);
     m_deviceEnabled->setVisible(!accessory);
@@ -794,6 +827,7 @@ void MainWindow::refreshBindings()
     m_removeButton->setEnabled(false);
     m_clearButton->setEnabled(!sources.isEmpty());
     m_table->setEnabled(dev != nullptr);
+    refreshUndoButtons();
 }
 
 void MainWindow::editBinding(int sourceCode)
@@ -809,12 +843,17 @@ void MainWindow::editBinding(int sourceCode)
     if (sourceCode > 0) {
         dlg.setSource(sourceCode);
         // An unbound key starts out mapped to itself, the natural starting point.
-        if (bindings.contains(sourceCode))
+        if (bindings.contains(sourceCode)) {
             dlg.setBinding(bindings.value(sourceCode));
+            dlg.showReset();
+        }
         else if (Keys::isValidTarget(sourceCode))
             dlg.setBinding(makeBinding({sourceCode}, 0, {}, 0));
     }
-    if (dlg.exec() != QDialog::Accepted)
+    const int result = dlg.exec();
+    if (result == BindingDialog::ResetKey)
+        removeBinding(sourceCode);
+    if (result != QDialog::Accepted)
         return;
 
     const int src = dlg.source();
@@ -842,20 +881,71 @@ void MainWindow::storeBinding(int oldSource, int source, const Binding &binding)
         bindings.remove(source);
     else
         bindings.insert(source, binding);
-    m_config->setDevice(dev->profileKey, p);
-    saveProfile();
+    commitBindings(dev->profileKey, p, tr("Bind %1").arg(Keys::triggerLabel(source)));
 }
 
 void MainWindow::removeSelectedBinding()
 {
+    if (QTableWidgetItem *item = m_table->item(m_table->currentRow(), 0))
+        removeBinding(item->data(Qt::UserRole).toInt());
+}
+
+void MainWindow::removeBinding(int source)
+{
     const RazerDevice *dev = current();
-    QTableWidgetItem *item = m_table->item(m_table->currentRow(), 0);
-    if (!dev || !item)
+    if (!dev)
         return;
     DeviceProfile p = m_config->device(dev->profileKey);
-    (m_hypershiftLayer ? p.hypershift : p.bindings).remove(item->data(Qt::UserRole).toInt());
-    m_config->setDevice(dev->profileKey, p);
+    (m_hypershiftLayer ? p.hypershift : p.bindings).remove(source);
+    commitBindings(dev->profileKey, p, tr("Remove %1").arg(Keys::triggerLabel(source)));
+}
+
+void MainWindow::commitBindings(const QString &device, const DeviceProfile &edited, const QString &what)
+{
+    const DeviceProfile old = m_config->device(device);
+    m_histories[device + QLatin1Char('\n') + m_config->activeProfile(device)]
+        .record(what, m_hypershiftLayer, {old.bindings, old.hypershift}, {edited.bindings, edited.hypershift});
+    m_config->setDevice(device, edited);
     saveProfile();
+}
+
+BindingHistory *MainWindow::history()
+{
+    const RazerDevice *dev = current();
+    return dev ? &m_histories[dev->profileKey + QLatin1Char('\n') + m_config->activeProfile(dev->profileKey)] : nullptr;
+}
+
+void MainWindow::stepHistory(bool redo)
+{
+    BindingHistory *h = history();
+    if (!h)
+        return;
+    const QString device = current()->profileKey;
+    DeviceProfile p = m_config->device(device);
+    const BindingLayers now{p.bindings, p.hypershift};
+    if (!(redo ? h->canRedo(now) : h->canUndo(now)))
+        return;
+    const BindingHistory::Edit edit = redo ? h->redo() : h->undo();
+    const BindingLayers &state = redo ? edit.after : edit.before;
+    p.bindings = state.normal;
+    p.hypershift = state.hypershift;
+    m_config->setDevice(device, p);
+    // Show the layer that changed.
+    (edit.hypershiftLayer ? m_layerHypershift : m_layerNormal)->setChecked(true);
+    saveProfile();
+    statusBar()->showMessage((redo ? tr("Redid: %1") : tr("Undid: %1")).arg(edit.what), 5000);
+}
+
+void MainWindow::refreshUndoButtons()
+{
+    BindingHistory *h = history();
+    const DeviceProfile p = current() ? m_config->device(current()->profileKey) : DeviceProfile();
+    const BindingLayers now{p.bindings, p.hypershift};
+    const bool undo = h && h->canUndo(now), redo = h && h->canRedo(now);
+    m_undoButton->setEnabled(undo);
+    m_redoButton->setEnabled(redo);
+    m_undoButton->setToolTip(undo ? tr("Undo: %1 (Ctrl+Z)").arg(h->undoName()) : tr("Nothing to undo"));
+    m_redoButton->setToolTip(redo ? tr("Redo: %1 (Ctrl+Shift+Z)").arg(h->redoName()) : tr("Nothing to redo"));
 }
 
 void MainWindow::clearBindings()
@@ -870,8 +960,7 @@ void MainWindow::clearBindings()
         return;
     DeviceProfile p = m_config->device(dev->profileKey);
     (m_hypershiftLayer ? p.hypershift : p.bindings).clear();
-    m_config->setDevice(dev->profileKey, p);
-    saveProfile();
+    commitBindings(dev->profileKey, p, tr("Clear all"));
 }
 
 void MainWindow::saveProfile()

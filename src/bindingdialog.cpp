@@ -311,6 +311,11 @@ BindingDialog::BindingDialog(RemapManager *manager, const RazerDevice &device, b
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     connect(buttons, &QDialogButtonBox::accepted, this, &BindingDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &BindingDialog::reject);
+    m_reset = buttons->addButton(tr("Reset this key"), QDialogButtonBox::ResetRole);
+    m_reset->setToolTip(hypershiftLayer ? tr("Remove this binding, so the key goes back to its Normal binding")
+                                        : tr("Remove this binding, so the key goes back to what it normally does"));
+    m_reset->hide();
+    connect(m_reset, &QPushButton::clicked, this, [this] { done(ResetKey); });
 
     auto *layout = new QVBoxLayout(this);
     layout->addWidget(inputBox);
@@ -603,6 +608,11 @@ void BindingDialog::updateState()
     else
         right = Keys::bindingLabel(binding()).toHtmlEscaped();
     m_preview->setText(QStringLiteral("<b>%1</b> &nbsp;→&nbsp; <b>%2</b>").arg(left, right));
+}
+
+void BindingDialog::showReset()
+{
+    m_reset->show();
 }
 
 void BindingDialog::accept()

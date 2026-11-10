@@ -61,6 +61,10 @@ public:
     // itself be a Hypershift key.
     BindingDialog(RemapManager *manager, const RazerDevice &device, bool hypershiftLayer, QWidget *parent = nullptr);
 
+    // exec() result for "Reset this key".
+    enum { ResetKey = 2 };
+    void showReset(); // the input has a binding here that can be reset
+
     void setSource(int trigger); // a code, or a combo from Keys::trigger()
     void setBinding(const Binding &binding);
     int source() const; // trigger: the input plus the modifiers it needs
@@ -112,5 +116,6 @@ private:
     KeyPicker *m_key;
     KeyRecorder *m_record;
     QLabel *m_preview;
+    QPushButton *m_reset;
     InputDetector *m_detector;
 };

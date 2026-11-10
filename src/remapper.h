@@ -65,6 +65,9 @@ signals:
     // The keyboard's game mode key (Fn+F10, which the driver reports as
     // KEY_MACRO29) was pressed. From the worker thread.
     void gameModeKey();
+    // The first Hypershift key went down on any device, or the last came up.
+    // From the worker thread.
+    void hypershiftChanged(bool held);
     void failed(const QString &message);
     void disconnected();
 
@@ -86,6 +89,7 @@ private:
     void dispatchKey(int code, int value);
     void processKey(int code, int value);
     void resolveTapHold(bool hold);
+    void changeHypershiftHeld(int delta);
     void handleWheel(const input_event &ev);
     void forwardLeds();
 

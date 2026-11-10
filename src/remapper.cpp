@@ -333,7 +333,7 @@ void Remapper::ungrab()
     m_outputCount.clear();
     for (const QList<int> &targets : std::as_const(m_held))
         if (targets == QList<int>{Keys::Hypershift})
-            --g_hypershiftHeld;
+            changeHypershiftHeld(-1);
     m_held.clear();
     m_turbo.clear();
     m_macros.clear();
@@ -546,6 +546,14 @@ void Remapper::dispatchKey(int code, int value)
         resolveTapHold(true); // another key went down and up meanwhile: Caps + C means Ctrl + C
 }
 
+void Remapper::changeHypershiftHeld(int delta)
+{
+    const int before = g_hypershiftHeld.fetch_add(delta);
+    const int now = before + delta;
+    if ((before > 0) != (now > 0))
+        emit hypershiftChanged(now > 0);
+}
+
 void Remapper::resolveTapHold(bool hold)
 {
     const TapHold t = *m_tapHold;
@@ -557,7 +565,7 @@ void Remapper::resolveTapHold(bool hold)
     } else {
         m_held.insert(t.code, t.binding.hold);
         if (t.binding.hold == QList<int>{Keys::Hypershift})
-            ++g_hypershiftHeld;
+            changeHypershiftHeld(1);
         else
             pressAll(t.binding.hold);
         syn();
@@ -631,7 +639,7 @@ void Remapper::processKey(int code, int value)
         }
         m_held.insert(code, b.targets);
         if (b.isHypershift())
-            ++g_hypershiftHeld;
+            changeHypershiftHeld(1);
         else if (b.turbo > 0 && !b.targets.isEmpty())
             startTurbo(code, b);
         else
@@ -645,7 +653,7 @@ void Remapper::processKey(int code, int value)
         if (auto m = m_macros.constFind(code); m != m_macros.constEnd() && m->mode == Binding::RepeatWhileHeld) {
             stopMacro(code);
         } else if (targets == QList<int>{Keys::Hypershift}) {
-            --g_hypershiftHeld;
+            changeHypershiftHeld(-1);
         } else if (auto t = m_turbo.find(code); t != m_turbo.end()) {
             if (t->down)
                 releaseAll(t->targets);

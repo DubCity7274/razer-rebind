@@ -119,6 +119,12 @@ trimmed to that layout. A model that differs gets its corrections in
 light single matrix cells and see which key they are. `tests/ledmap_test.cpp`
 checks every map stays inside its matrix with no two keys on one LED.
 
+While Hypershift is held, the remappers signal `hypershiftChanged` and the
+RemapManager sends each keyboard with an LED map a custom frame from
+`DeviceProfile::hypershiftLighting()`, on the same one-at-a-time queue as DPI
+writes. On release it writes the profile's lighting again, or for a keyboard
+without profile lighting, what it read from the daemon beforehand.
+
 Automatic profile switching reads `/proc` every two seconds for the user's
 processes. A process is known by argv[0] (which holds the Windows path for
 Wine and Proton games), its executable and its kernel name. Before switching,

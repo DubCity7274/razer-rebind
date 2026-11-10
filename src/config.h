@@ -43,6 +43,10 @@ struct DeviceProfile
     GameMode gameMode;
 
     bool hasHypershiftKey() const;
+    // What a keyboard shows while Hypershift is held: its Hypershift-layer
+    // keys lit, its Hypershift keys white, the rest dark. Not valid when the
+    // layer has nothing to show.
+    LightingSettings hypershiftLighting() const;
 };
 
 // A global shortcut handled by the remapper itself, so it works on any desktop
@@ -89,6 +93,7 @@ public:
     int batteryThreshold = 20;   // percent
     bool trayBattery = true;     // battery gauge on the tray icon
     bool autoSwitch = true;      // switch profiles when their programs run
+    bool hypershiftLights = true; // light the layer's keys while Hypershift is held
     bool lightsOffIdle = true;   // lighting off after a while without input
     int lightsOffIdleMinutes = 15;
     bool lightsOffLocked = true; // lighting off while the screen is locked

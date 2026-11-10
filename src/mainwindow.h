@@ -1,5 +1,7 @@
 #pragma once
 
+#include "bindinghistory.h"
+#include "config.h"
 #include "keys.h"
 #include "razerdevice.h"
 
@@ -47,6 +49,12 @@ private:
     void refreshBindings();
     void editBinding(int sourceCode);
     void removeSelectedBinding();
+    void removeBinding(int source);
+    // Store edited bindings as one undoable step named `what`.
+    void commitBindings(const QString &device, const DeviceProfile &edited, const QString &what);
+    BindingHistory *history();
+    void stepHistory(bool redo);
+    void refreshUndoButtons();
     void clearBindings();
     void storeBinding(int oldSource, int source, const Binding &binding);
     void setHypershiftLayer(bool on);
@@ -95,9 +103,13 @@ private:
     QPushButton *m_editButton;
     QPushButton *m_removeButton;
     QPushButton *m_clearButton;
+    QPushButton *m_undoButton;
+    QPushButton *m_redoButton;
+    QHash<QString, BindingHistory> m_histories; // by device key and profile name
     QPushButton *m_layerNormal;
     QPushButton *m_layerHypershift;
     QLabel *m_layerHint;
+    QCheckBox *m_layerLights;  // keyboards with per-key lighting
     QWidget *m_layerRow;      // hidden for lighting-only devices
     QWidget *m_gameWidget;    // keyboards: game mode and what it blocks
     QPushButton *m_gameMode;

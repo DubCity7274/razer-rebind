@@ -108,6 +108,7 @@ private:
     QHash<QString, qint64> m_gameLedSetAt;              // by hidPath: when (ms since epoch), to tell Fn+F10 apart
     QTimer m_gameLedWatch;                              // Fn+F10 flips the LED in firmware: follow it
     void checkGameLeds();
+    void showHypershiftLayer(bool held);
     // DPI changes take ~60 ms each over USB; they run here, one at a time
     // and in order, so they never hold up input or the window.
     QThreadPool m_sensorQueue;
@@ -117,6 +118,9 @@ private:
     // By hidPath: what a device without profile lighting had before lights
     // out; filled and used by tasks on m_sensorQueue, which run in order.
     QHash<QString, std::shared_ptr<LightingSettings>> m_lightsBefore;
+    // By hidPath, for the keyboards showing the Hypershift layer: what one
+    // without profile lighting had before (null with profile lighting).
+    QHash<QString, std::shared_ptr<LightingSettings>> m_layerBefore;
     QFileSystemWatcher m_watcher;
     QTimer m_rescanTimer;
     int m_retries = 0;

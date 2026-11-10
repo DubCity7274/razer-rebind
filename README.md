@@ -202,6 +202,11 @@ Bound keys are highlighted, and keys light up while you hold them. Bindings
 are saved and applied immediately. **Ctrl+E** turns all remapping off and
 on; when it's off, your devices behave exactly as if the app weren't running.
 
+Changed your mind? **Undo** and **Redo** next to the bindings list (or
+Ctrl+Z and Ctrl+Shift+Z) step through your changes for the selected device
+and profile until you close the app, including **Clear all**. To put one key
+back, click it and press **Reset this key**.
+
 ### Hypershift
 
 Hypershift gives every device a second layer of bindings that is used while
@@ -218,6 +223,12 @@ keyboard to its Hypershift layer too. Each device has its own Hypershift
 layer in each profile. The Hypershift key itself sends nothing. A key you
 press while holding it stays bound to its Hypershift action until you
 release that key, even if you let go of Hypershift first.
+
+On keyboards with per-key lighting, holding a Hypershift key also shows the
+layer on the keyboard: keys bound in the Hypershift layer light up purple, the
+Hypershift keys white, and the rest go dark, until you let go. The lighting
+then goes back to what it was. Turn it off with **Show layer on keys** next to
+the layer buttons.
 
 ### Macros
 

@@ -258,6 +258,24 @@ QString tr(const char *text)
 
 } // namespace
 
+LightingSettings DeviceProfile::hypershiftLighting() const
+{
+    // Purple, stronger than the window's: paler shades wash out on the LEDs.
+    const QColor layer(0x80, 0x00, 0xff);
+    LightingSettings s;
+    for (auto it = hypershift.cbegin(); it != hypershift.cend(); ++it)
+        if (!it->isDisabled())
+            s.keys.insert(Keys::triggerCode(it.key()), layer);
+    if (s.keys.isEmpty())
+        return {};
+    s.effect = LightingSettings::Custom;
+    s.edge = layer.darker(300);
+    for (auto it = bindings.cbegin(); it != bindings.cend(); ++it)
+        if (it->triggersHypershift())
+            s.keys.insert(Keys::triggerCode(it.key()), Qt::white);
+    return s;
+}
+
 bool DeviceProfile::hasHypershiftKey() const
 {
     return std::any_of(bindings.cbegin(), bindings.cend(), [](const Binding &b) { return b.triggersHypershift(); });
@@ -323,6 +341,7 @@ bool Config::load(const QString &path, QString *error)
     batteryThreshold = std::clamp(battery.value(QStringLiteral("threshold")).toInt(20), 1, 99);
     trayBattery = battery.value(QStringLiteral("tray")).toBool(true);
     autoSwitch = root.value(QStringLiteral("autoSwitch")).toBool(true);
+    hypershiftLights = root.value(QStringLiteral("hypershiftLights")).toBool(true);
     const QJsonObject lightsOff = root.value(QStringLiteral("lightsOff")).toObject();
     lightsOffIdle = lightsOff.value(QStringLiteral("idle")).toBool(true);
     lightsOffIdleMinutes = std::clamp(lightsOff.value(QStringLiteral("minutes")).toInt(15), 1, 240);
@@ -457,6 +476,7 @@ bool Config::save(QString *error) const
         {QStringLiteral("remappingEnabled"), remappingEnabled},
         {QStringLiteral("notifications"), notifications},
         {QStringLiteral("autoSwitch"), autoSwitch},
+        {QStringLiteral("hypershiftLights"), hypershiftLights},
         {QStringLiteral("lightsOff"), QJsonObject{{QStringLiteral("idle"), lightsOffIdle},
                                                   {QStringLiteral("minutes"), lightsOffIdleMinutes},
                                                   {QStringLiteral("locked"), lightsOffLocked}}},

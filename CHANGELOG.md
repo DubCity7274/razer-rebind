@@ -11,6 +11,13 @@
   key positions follow OpenRazer's key table and haven't been checked on
   the keyboards themselves yet. Keys the picture doesn't have show up below
   it when pressed, so they can still be bound.
+- **Hypershift on the keys.** While a Hypershift key is held, keyboards with
+  per-key lighting light the keys bound in the Hypershift layer and darken
+  the rest. **Show layer on keys** turns it off.
+- **Undo and redo for bindings.** **Undo** and **Redo** buttons, also
+  Ctrl+Z and Ctrl+Shift+Z or Ctrl+Y, per device and profile, for adding,
+  editing, removing and clearing bindings on either layer.
+- **Reset this key** in the binding dialog removes the key's binding.
 
 ## 1.0.0 (2026-10-19)
 
