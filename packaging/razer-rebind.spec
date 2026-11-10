@@ -1,5 +1,5 @@
 Name:           razer-rebind
-Version:        1.0.0
+Version:        1.1.0
 Release:        1%{?dist}
 Summary:        Key and button rebinding for Razer keyboards and mice (OpenRazer)
 
@@ -63,6 +63,11 @@ udevadm trigger --subsystem-match=input --subsystem-match=misc --action=change >
 %{_udevrulesdir}/70-%{name}.rules
 
 %changelog
+* Mon Nov 09 2026 dub <111620773+DubCity7274@users.noreply.github.com> - 1.1.0-1
+- Keyboard pictures and per-key lighting for 35 more keyboards
+- The Hypershift layer shown on the keys while it's held
+- Undo, redo and reset for bindings
+
 * Mon Oct 19 2026 dub <111620773+DubCity7274@users.noreply.github.com> - 1.0.0-1
 - Lighting: effects, per-key painting with the edge light strips, per
   profile, off when idle or locked; docks and headsets
