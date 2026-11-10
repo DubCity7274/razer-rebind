@@ -110,7 +110,7 @@ menu entry, the background service and the device permission rule.
 
 | System | Download |
 |---|---|
-| Fedora 43, 44, Nobara | `razer-rebind-<version>.fc43.x86_64.rpm` or `.fc44` |
+| Fedora 43, 44, 45, Nobara | `razer-rebind-<version>.fc43.x86_64.rpm`, `.fc44` or `.fc45` |
 | Debian 12, 13 | `razer-rebind_<version>-1_debian12_amd64.deb` or `_debian13` |
 | Ubuntu 24.04, 26.04 | `razer-rebind_<version>-1_ubuntu24.04_amd64.deb` or `_ubuntu26.04` |
 | Any distribution, no install | `razer-rebind-<version>-x86_64.AppImage` |

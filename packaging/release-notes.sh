@@ -34,6 +34,7 @@ cat <<NOTES
 
 | Your system | File |
 |---|---|
+| Fedora 45 | \`razer-rebind-$version-1.fc45.x86_64.rpm\` |
 | Fedora 44, Nobara | \`razer-rebind-$version-1.fc44.x86_64.rpm\` |
 | Fedora 43 | \`razer-rebind-$version-1.fc43.x86_64.rpm\` |
 | Debian 13 | \`razer-rebind_$version-1_debian13_amd64.deb\` |

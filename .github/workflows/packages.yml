@@ -45,7 +45,7 @@ jobs:
     container: registry.fedoraproject.org/fedora:${{ matrix.fedora }}
     strategy:
       matrix:
-        fedora: ['43', '44']
+        fedora: ['43', '44', '45']
     steps:
       # git must exist before checkout, or actions/checkout falls back to a
       # tarball without history and `git archive` can't run.
